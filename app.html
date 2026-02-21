@@ -1,100 +1,120 @@
 <!doctype html>
 <html lang="pt-br">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Lion Vibes — App</title>
-  <link rel="stylesheet" href="assets/styles.css"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lion Vibes — Sessão</title>
+  <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
   <div class="bg"></div>
 
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo">
-        <img class="logoImg" src="logo.jpg" alt="Lion Vibes"/>
-      </div>
-      <div>
-        <div class="brand-title">Lion Vibes</div>
-        <div class="brand-sub">Espelho de ritmo em tempo real</div>
-      </div>
-    </div>
-    <nav class="nav">
-      <a class="link" href="intro.html">Tutorial</a>
-      <a class="link" href="report.html">Relatórios</a>
-    </nav>
-  </header>
-
   <main class="container">
-    <section class="card">
-      <div class="row" style="justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" id="logoBox"></div>
         <div>
-          <h1 style="margin:0">Sessão</h1>
-          <div class="muted">Mostra o <b>último trecho</b> (até 5 min) e gera relatório ao exportar.</div>
+          <div class="brand-title">Lion Vibes</div>
+          <div class="brand-sub">Sessão ao vivo • até 5 minutos por relatório</div>
         </div>
-        <div class="mini">
-          <div class="pill ok" id="pillStatus">Pronto</div>
+      </div>
+      <nav class="nav">
+        <a class="link" href="welcome.html">Início</a>
+        <a class="link" href="report.html">Relatórios</a>
+      </nav>
+    </header>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
+        <div>
+          <h1>Sessão</h1>
+          <p class="muted" style="margin-top:6px">
+            Fale naturalmente. O gráfico mostra 8 linhas com “decay” suave e uma meta (linha tracejada).
+            Você treina estabilidade, pausa consciente e clareza.
+          </p>
+        </div>
+
+        <div class="pillBox">
           <div class="pill info" id="pillTime">00:00</div>
-          <div class="pill warn" id="pillTokens">Tokens: 0</div>
+          <div class="pill ok" id="pillToken">Tokens: 0</div>
+          <div class="pill warn" id="pillMic">Mic: off</div>
         </div>
       </div>
 
-      <div class="actions" style="margin-top:12px">
-        <button class="btn primary" id="btnStart">Iniciar</button>
-        <button class="btn" id="btnPause" disabled>Pausar</button>
-        <button class="btn danger" id="btnStop" disabled>Encerrar</button>
-        <button class="btn" id="btnExport" disabled>Exportar (últ. 5 min)</button>
-      </div>
-
-      <div class="grid2" style="margin-top:14px">
-        <div class="card soft">
-          <div class="row" style="justify-content:space-between">
-            <div style="font-weight:800">Gráfico (8 linhas)</div>
-            <div class="tiny muted">metas + queda lenta + picos</div>
-          </div>
-          <canvas id="cv" height="220"></canvas>
-          <div class="tiny muted" style="margin-top:8px">
-            Dica: fale com ritmo constante e intenção. Observe as metas (tracinhos).
-          </div>
-        </div>
-
-        <div class="card soft">
-          <div style="font-weight:800;margin-bottom:8px">Ajuda rápida</div>
-          <div class="tips">
-            <div class="tip"><b>Presença</b>: voz firme, sem “sumir”.</div>
-            <div class="tip"><b>Fluxo</b>: evite acelerar no fim das frases.</div>
-            <div class="tip"><b>Pausa OK</b>: respire, mas não quebre tudo.</div>
-            <div class="tip"><b>Entonação</b>: variação natural, sem monotonia.</div>
-            <div class="tip"><b>Foco</b>: menos ruído ao redor = melhor leitura.</div>
-            <div class="tip"><b>Tokens</b>: mantenha o “zona boa” por tempo contínuo.</div>
-          </div>
-        </div>
-      </div>
-
-      <hr/>
-
-      <div class="grid2">
+      <div class="grid2" style="margin-top:10px">
         <div class="field">
-          <label>Objetivo do treino (texto livre)</label>
-          <input id="goal" placeholder="Ex: falar com calma por 60s, com pausas boas."/>
+          <label>Seu nome (opcional)</label>
+          <input id="who" placeholder="Ex: Paulo" />
         </div>
+
         <div class="field">
-          <label>Observação (opcional)</label>
-          <input id="note" placeholder="Ex: ambiente silencioso / sentado / etc."/>
+          <label>Modo de treino</label>
+          <select id="mode">
+            <option value="presenca">Presença (calma + estabilidade)</option>
+            <option value="foco">Foco (clareza + constância)</option>
+            <option value="harmonia">Harmonia (ritmo equilibrado)</option>
+          </select>
         </div>
       </div>
 
-      <p class="tiny muted" style="margin-top:10px">
-        Segurança: este app não protege dados por servidor; o conteúdo fica no seu navegador.
+      <div class="row" style="justify-content:space-between; margin-top:10px; gap:10px; flex-wrap:wrap;">
+        <div class="actions" style="gap:10px;">
+          <button class="btn primary" id="btnStart">Iniciar microfone</button>
+          <button class="btn" id="btnPause" disabled>Pausar</button>
+          <button class="btn danger" id="btnStop" disabled>Encerrar</button>
+        </div>
+
+        <div class="actions" style="gap:10px;">
+          <button class="btn" id="btnSnapshot" disabled>Salvar relatório (últimos 5 min)</button>
+        </div>
+      </div>
+
+      <div class="card soft" style="margin-top:12px">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <div style="font-weight:900">Overlay (8 linhas)</div>
+          <div class="muted" style="font-size:12px">Meta = tracejado • Decay = queda lenta</div>
+        </div>
+
+        <div class="canvasWrap">
+          <canvas id="cv" width="900" height="420"></canvas>
+        </div>
+
+        <div class="grid2" style="margin-top:10px">
+          <div class="card soft">
+            <div style="font-weight:900">Dicas rápidas</div>
+            <p class="muted" style="margin-top:6px">
+              • Fale sem correr.<br/>
+              • Pausa curta antes de responder melhora o controle.<br/>
+              • Se ficar “muito alto”, afaste o mic um pouco.<br/>
+              • Se ficar “muito baixo”, aproxime e articule.
+            </p>
+          </div>
+
+          <div class="card soft">
+            <div style="font-weight:900">Meta e Token</div>
+            <p class="muted" style="margin-top:6px">
+              Se você mantém a sessão acima da meta por alguns segundos, ganha 1 token interno.
+              É só gamificação do treino (não tem valor financeiro).
+            </p>
+            <div class="mini" style="margin-top:8px">
+              <div class="pill ok" id="pillScore">Score: --</div>
+              <div class="pill info" id="pillGoal">Meta: --</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="muted" style="font-size:12px;margin-top:10px">
+        Importante: isso é feedback heurístico (sinal/ritmo). Não é avaliação clínica.
       </p>
     </section>
   </main>
 
-  <footer class="footer"><span>Lion Vibes • Demo • HTML/CSS/JS</span></footer>
-
-  <script src="assets/storage.js"></script>
-  <script src="assets/gate.js"></script>
-  <script src="assets/audio_engine.js"></script>
+  <script src="assets/core.js"></script>
   <script src="assets/app.js"></script>
+  <script>
+    LV.requireAuth();
+    LV.mountLogo("logoBox");
+  </script>
 </body>
 </html>
