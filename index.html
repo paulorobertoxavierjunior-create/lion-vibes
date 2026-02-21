@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Lion Vibes — Conexão</title>
+  <link rel="stylesheet" href="assets/styles.css"/>
+</head>
+<body>
+  <div class="bg"></div>
+
+  <main class="center">
+    <div class="card hero">
+      <div class="brandBig">
+        <img class="logoBig" src="logo.jpg" alt="Lion Vibes"/>
+        <div>
+          <div class="h1">Lion Vibes</div>
+          <div class="sub">Espelho de ritmo • voz • presença (demo)</div>
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top:14px">
+        Um app de autoconsciência por voz. Sem diagnóstico. Sem “mágica”.
+        <br/>Você fala, observa, ajusta e melhora.
+      </p>
+
+      <div class="actions" style="margin-top:16px">
+        <button class="btn primary" id="btnConnect">Iniciar conexão</button>
+      </div>
+
+      <div class="mini" style="margin-top:12px">
+        <div class="pill info">Tudo roda no seu navegador</div>
+        <div class="pill warn">Microfone será solicitado depois</div>
+      </div>
+
+      <p class="tiny muted" style="margin-top:10px">
+        Acesso demo com código simples (não é segurança real).
+      </p>
+    </div>
+  </main>
+
+  <script src="assets/storage.js"></script>
+  <script src="assets/gate.js"></script>
+  <script>
+    // Clique -> pede código -> vai para intro
+    document.getElementById("btnConnect").addEventListener("click", ()=>{
+      // Código demo simples (você pode mudar depois)
+      // Dica: você diz o código para quem recebeu o link.
+      window.LION.gate.requirePasscodeOrRedirect("intro.html");
+    });
+  </script>
+</body>
+</html>
