@@ -3,64 +3,193 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lion Vibes — Conexão</title>
+  <title>Lion Vibes — Sessão (Demo)</title>
   <link rel="stylesheet" href="assets/styles.css" />
+  <style>
+    /* centralização + layout limpo, sem depender do teu styles */
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 18px; }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .logoBox { width:44px; height:44px; border-radius:14px; background:#fff; display:grid; place-items:center; border:1px solid rgba(0,0,0,.08); overflow:hidden; }
+    .logoBox img { width:100%; height:100%; object-fit:cover; }
+    .title { font-weight:800; font-size:18px; }
+    .sub { opacity:.7; font-size:12px; margin-top:2px; }
+    .nav a { text-decoration:none; margin-left:12px; font-weight:700; opacity:.85; }
+    .card { background: rgba(255,255,255,.82); border: 1px solid rgba(0,0,0,.08); border-radius: 22px; padding: 16px; box-shadow: 0 12px 30px rgba(0,0,0,.05); }
+    .grid2 { display:grid; grid-template-columns: 1.3fr .7fr; gap:12px; }
+    @media (max-width: 860px){ .grid2 { grid-template-columns: 1fr; } }
+    .pillRow { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .pill { padding:8px 10px; border-radius: 999px; border:1px solid rgba(0,0,0,.10); background:#fff; font-weight:800; font-size:12px; }
+    .pill.ok { background: rgba(120,255,180,.25); }
+    .pill.warn { background: rgba(255,210,120,.25); }
+    .pill.info { background: rgba(120,200,255,.22); }
+
+    .field { margin-top:10px; }
+    label { display:block; font-weight:800; margin-bottom:6px; opacity:.85; }
+    input, select, textarea {
+      width:100%; box-sizing:border-box;
+      padding: 12px 12px; border-radius: 14px;
+      border:1px solid rgba(0,0,0,.12); background:#fff;
+      outline:none;
+    }
+    textarea { resize: vertical; }
+    .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+    .btn {
+      appearance:none; border:1px solid rgba(0,0,0,.12);
+      background:#fff; border-radius: 16px; padding: 12px 14px;
+      font-weight:900; cursor:pointer;
+    }
+    .btn.primary { background: linear-gradient(135deg, rgba(120,255,220,.55), rgba(120,180,255,.45)); }
+    .btn.danger { background: rgba(255,120,120,.20); }
+    .muted { opacity:.75; line-height:1.35; }
+    .h1 { font-size: 34px; font-weight: 900; margin: 6px 0 0; }
+    .kpiBox { display:grid; gap:10px; align-content:start; }
+
+    .bars { margin-top: 12px; display:grid; gap:10px; }
+    .barRow { display:grid; grid-template-columns: 130px 1fr 66px; gap:10px; align-items:center; }
+    .barLbl { font-weight:900; font-size: 13px; opacity:.85; }
+    .barTrack { height: 14px; border-radius: 999px; background: rgba(0,0,0,.06); position:relative; overflow:hidden; }
+    .barFill { height: 100%; width: 0%; border-radius:999px; background: rgba(80,120,255,.55); transition: width .08s linear; }
+    .barGoal {
+      position:absolute; top:-2px; bottom:-2px;
+      width:2px; background: rgba(0,0,0,.35);
+      border-radius:999px;
+      opacity:.65;
+    }
+    .barVal { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:900; font-size:12px; opacity:.85; text-align:right; }
+
+    .sectionTitle { font-size: 16px; font-weight: 950; margin: 14px 0 6px; }
+    .quizBox { margin-top: 10px; }
+    .qTitle { font-weight: 950; font-size: 15px; }
+    .choices { display:grid; gap:8px; margin-top:10px; }
+    .choice { display:flex; gap:10px; align-items:flex-start; background:#fff; border:1px solid rgba(0,0,0,.10); border-radius: 14px; padding: 10px; }
+    .choice input { width:auto; margin-top: 3px; }
+    .result { margin-top:10px; padding:10px; border-radius:14px; border:1px solid rgba(0,0,0,.10); background: rgba(255,255,255,.75); }
+    .footer { opacity:.6; font-size:12px; text-align:center; padding: 18px 0 6px; }
+  </style>
 </head>
 <body>
-  <div class="bg"></div>
-
-  <main class="container narrow">
-    <section class="card center">
-      <div class="brandBig">
-        <div class="mark" id="mark"></div>
-        <div class="t1">Lion Vibes</div>
-        <div class="t2">Autoconhecimento por ritmo • Demo</div>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <div class="logoBox">
+          <!-- usa tua logo que tu subiu -->
+          <img src="IMG-20260218-WA0015.jpg" alt="LV">
+        </div>
+        <div>
+          <div class="title">Lion Vibes</div>
+          <div class="sub">Treino de autopercepção por ritmo • Demo (sem diagnóstico)</div>
+        </div>
       </div>
-
-      <p class="muted center" style="margin-top:10px">
-        Bem-vindo(a). Esta é uma demo de espelho de interação por áudio.<br/>
-        Não é diagnóstico, não é medicina, não promete cura — é treino e consciência.
-      </p>
-
-      <div class="field" style="margin-top:14px">
-        <label for="code">Senha de acesso</label>
-        <input id="code" inputmode="numeric" placeholder="Digite a senha" />
+      <div class="nav">
+        <a href="welcome.html">Início</a>
+        <a href="report.html">Relatórios</a>
       </div>
+    </div>
 
-      <div class="actions" style="justify-content:center">
-        <button class="btn primary" id="btn">Iniciar conexão</button>
-      </div>
+    <div style="height:12px"></div>
 
-      <p class="muted center" style="font-size:12px;margin-top:10px">
-        Dica: use fone/mic próximo. Um ambiente calmo melhora a leitura do seu próprio ritmo.
-      </p>
-    </section>
-  </main>
+    <div class="grid2">
+      <section class="card">
+        <div class="h1">Sessão</div>
+        <p class="muted">
+          Você fala, o sistema te devolve um “espelho” de estabilidade.  
+          As barras sobem nos picos e caem devagar (decay) para formar uma média visual.
+        </p>
 
-  <script src="assets/core.js"></script>
-  <script>
-    // mostra logo.png se existir
-    (function(){
-      const mark = document.getElementById("mark");
-      const img = new Image();
-      img.onload = ()=>{ mark.innerHTML = ""; mark.appendChild(img); img.className="logoBig"; };
-      img.onerror = ()=>{ mark.textContent = "LV"; mark.classList.add("fallback"); };
-      img.src = "logo.png";
-    })();
+        <div class="pillRow">
+          <div class="pill ok" id="pillTokens">Tokens: 0</div>
+          <div class="pill info" id="pillMic">Mic: pausado</div>
+          <div class="pill warn" id="pillGoal">Meta: 0/3</div>
+        </div>
 
-    document.getElementById("btn").addEventListener("click", ()=>{
-      const code = (document.getElementById("code").value || "").trim();
-      if(!code){ alert("Digite a senha."); return; }
-      if(code !== "12345"){ alert("Senha incorreta."); return; }
-      LV.set("lv_auth", { ok:true, at: Date.now() });
-      location.href = "welcome.html";
-    });
+        <div class="field">
+          <label for="studentName">Seu nome (opcional)</label>
+          <input id="studentName" placeholder="Ex: Paulo" />
+        </div>
 
-    // enter
-    document.getElementById("code").addEventListener("keydown",(e)=>{
-      if(e.key==="Enter") document.getElementById("btn").click();
-    });
-  </script>
+        <div class="field">
+          <label for="mode">Modo de treino</label>
+          <select id="mode">
+            <option value="presenca">Presença (calma + estabilidade)</option>
+            <option value="foco">Foco (clareza + constância)</option>
+            <option value="pausa">Pausa consciente (respira + retoma)</option>
+          </select>
+        </div>
+
+        <div class="actions">
+          <button class="btn primary" id="btnMic">Ativar microfone</button>
+          <button class="btn" id="btnPause">Pausar</button>
+          <button class="btn danger" id="btnStop">Encerrar</button>
+          <button class="btn" id="btnSave">Salvar relatório (últimos 5 min)</button>
+        </div>
+
+        <div class="sectionTitle">Métricas ao vivo (8 barras)</div>
+        <div class="bars" id="bars"></div>
+
+        <div class="result" id="coachBox">
+          <div style="font-weight:950">Coach (dicas rápidas)</div>
+          <div id="coachText" class="muted" style="margin-top:4px">
+            Ative o microfone e fale 20–30s. Tente manter as barras acima do tracinho (meta).
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="h1" style="font-size:26px">Prova vale 10</div>
+        <p class="muted">
+          O aluno pode fazer quantas vezes quiser. O sistema guarda a <b>maior nota</b>.  
+          Objetivo: aprender conceitos básicos de programação com incentivo.
+        </p>
+
+        <div class="field">
+          <label for="testDate">Data da prova</label>
+          <input id="testDate" type="date" />
+        </div>
+
+        <div class="field">
+          <label for="level">Nível</label>
+          <select id="level">
+            <option value="0">Nível 0 — Primeiros conceitos</option>
+            <option value="1">Nível 1 — Pensamento algorítmico</option>
+            <option value="2">Nível 2 — Começo de código (JS)</option>
+          </select>
+        </div>
+
+        <div class="actions">
+          <button class="btn primary" id="btnStartQuiz">Iniciar prova</button>
+          <button class="btn" id="btnResetBest">Zerar melhor nota (só você)</button>
+        </div>
+
+        <div class="quizBox" id="quizBox" style="display:none">
+          <div class="qTitle" id="qTitle"></div>
+          <div class="choices" id="choices"></div>
+          <div class="actions">
+            <button class="btn primary" id="btnSubmit">Responder</button>
+            <button class="btn" id="btnNext" style="display:none">Próxima</button>
+          </div>
+          <div class="result" id="quizResult" style="display:none"></div>
+        </div>
+
+        <div class="result" id="bestBox">
+          <div style="font-weight:950">Melhor nota</div>
+          <div class="muted" id="bestText" style="margin-top:4px">—</div>
+        </div>
+
+        <div class="result">
+          <div style="font-weight:950">Regras de token (demo)</div>
+          <div class="muted" style="margin-top:4px">
+            Se você cumprir 3 metas simples de estabilidade por alguns segundos, ganha 1 token.
+            Token aqui é só “gamificação”, sem valor financeiro.
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">Lion Vibes • Demo estática (HTML/CSS/JS) • Sem diagnóstico</div>
+  </div>
+
+  <script src="assets/app.js"></script>
 </body>
 </html>
-
