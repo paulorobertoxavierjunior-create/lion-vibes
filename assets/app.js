@@ -672,6 +672,7 @@ function resetStudent() {
   location.reload();
 }
 
+
 // ========= NAV =========
 function connect() {
   const name = (studentName.value || "").trim();
@@ -680,4 +681,100 @@ function connect() {
     alert("Digite seu nome.");
     return;
   }
-  student = { id: uid(), name, className, connectedAt
+  student = { id: uid(), name, className, connectedAt: Date.now() };
+  writeJSON(STORE.STUDENT, student);
+
+  showScreen("welcome");
+  renderWelcome();
+}
+
+function goExam() {
+  answers = {};
+  currentQ = 0;
+  showScreen("exam");
+  renderQuestion();
+  updateHeaderPills();
+}
+
+function retryExam() {
+  // refaz prova do nível atual (não “volta nível”)
+  answers = {};
+  currentQ = 0;
+  showScreen("exam");
+  renderQuestion();
+}
+
+function backHome() {
+  showScreen("welcome");
+  renderWelcome();
+}
+
+// ========= BOOT =========
+(function init() {
+  // logo
+  if (elLogo) elLogo.src = LOGO_SRC;
+
+  // pills
+  updateHeaderPills();
+
+  // bars UI
+  ensureBarsUI();
+
+  // tokens
+  trainToken.textContent = `Tokens: ${tokensObj.tokens || 0}`;
+
+  // se já tem aluno salvo, vai direto
+  if (student?.name) {
+    showScreen("welcome");
+    renderWelcome();
+  } else {
+    showScreen("login");
+  }
+
+  // binds
+  btnConnect?.addEventListener("click", connect);
+  btnGoExam?.addEventListener("click", goExam);
+
+  btnPrev?.addEventListener("click", () => {
+    currentQ = Math.max(0, currentQ - 1);
+    renderQuestion();
+  });
+  btnNext?.addEventListener("click", () => {
+    const level = levelByIndex(currentLevel);
+    currentQ = Math.min(level.questions.length - 1, currentQ + 1);
+    renderQuestion();
+  });
+  btnFinish?.addEventListener("click", finishExam);
+  btnRetry?.addEventListener("click", retryExam);
+  btnBackHome?.addEventListener("click", backHome);
+  btnResetStudent?.addEventListener("click", resetStudent);
+
+  // treino
+  resetTrainState();
+
+  btnMic?.addEventListener("click", async () => {
+    await enableMic();
+    // Se habilitou mic, libera start
+    if (analyser) {
+      btnStartTrain.disabled = trainAccumulated >= TRAIN_MAX_SEC;
+    }
+  });
+
+  btnStartTrain?.addEventListener("click", () => {
+    if (!analyser) {
+      alert("Ative o microfone primeiro.");
+      return;
+    }
+    startTrain();
+  });
+
+  btnStopTrain?.addEventListener("click", () => {
+    stopTrain();
+  });
+
+  // ao sair da página, encerra mic
+  window.addEventListener("beforeunload", () => {
+    try { if (micStream) micStream.getTracks().forEach(t => t.stop()); } catch {}
+    try { if (audioCtx) audioCtx.close(); } catch {}
+  });
+})();
