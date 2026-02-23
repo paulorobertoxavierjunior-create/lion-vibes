@@ -1,17 +1,11 @@
-# Lion Vibes (Demo)
+# Vibração de Leão (Demo) — Prova Vale 10
 
-App estático (HTML/CSS/JS) para **autoconhecimento por ritmo de voz**.
+App educacional estático (HTML/CSS/JS) para incentivo ao estudo:
+- Prova **vale 10**
+- O aluno pode repetir quantas vezes quiser
+- O sistema guarda a **maior nota** (localStorage)
+- Etapa **ORAL por voz** (pergunta a pergunta)
+- Etapa **ESCRITA** (gabarito)
 
-- Captura de microfone no navegador
-- 1 gráfico (overlay com 8 linhas)
-- Meta (linha tracejada) + decay (queda lenta)
-- Relatório (últimos 5 min) salvo no dispositivo
-- Tokens internos (gamificação — sem valor financeiro)
-
-> Ética: não é diagnóstico. É treino e espelho de interação.
-
-## Rodar
-Abra `index.html` via GitHub Pages.
-
-## GitHub Pages
-Settings → Pages → Deploy from branch → `main` / `(root)`
+**Privacidade:** dados ficam apenas no dispositivo do aluno (localStorage).  
+**Ética:** demo educacional, não é diagnóstico, não substitui acompanhamento pedagógico.
