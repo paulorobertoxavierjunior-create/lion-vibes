@@ -660,4 +660,153 @@ Fase oral (métricas heurísticas — sem áudio):
 
 Leitura pedagógica sugerida (não clínica):
 - Se o foco/constância caem muito, tente responder mais devagar e com pausas curtas.
-- Se a energia estiver muito baixa, aproxi
+- Se a energia estiver muito baixa, aproxime o microfone e fale com clareza.
+- Se a variação estiver muito alta, tente repetir a frase com ritmo mais estável.
+
+Próximo passo:
+- Refaça a prova e tente melhorar sua maior nota. O objetivo é aprender, não “acertar por sorte”.
+`;
+
+  document.getElementById("reportText").value = txt;
+}
+
+function anonymizedMetadata(){
+  // Não envia nada: apenas gera JSON copiável
+  // Sem nome, sem turma, sem áudio.
+  const h = readJSON(STORE.HISTORY, []);
+  const last = h[0] || null;
+
+  return {
+    app: "vibracoes-de-leao",
+    version: "demo-edu-1",
+    generatedAt: new Date().toISOString(),
+    lastScore: getLast(),
+    bestScore: getBest(),
+    oralMetrics: {
+      samples: oralAgg.samples,
+      avgRms: Number(oralAgg.avgRms.toFixed(4)),
+      avgSilence: Number(oralAgg.avgSilence.toFixed(4)),
+      avgVar: Number(oralAgg.avgVar.toFixed(4)),
+      avgPitchProxy: Number(oralAgg.avgPitchProxy.toFixed(4))
+    },
+    tokensLeft: getTokens(),
+    // só um “traço” de uso (sem PII)
+    lastAttemptAt: last?.ts ? new Date(last.ts).toISOString() : null
+  };
+}
+
+// ------------------------------
+// Bindings
+// ------------------------------
+document.addEventListener("DOMContentLoaded", ()=>{
+  initTokens();
+  refreshPills();
+  buildBars();
+  renderBars();
+
+  // restore profile
+  const prof = readJSON(STORE.PROFILE, null);
+  if(prof){
+    const n = document.getElementById("studentName");
+    const c = document.getElementById("studentClass");
+    if(n && !n.value) n.value = prof.name || "";
+    if(c && !c.value) c.value = prof.turma || "";
+  }
+
+  // Welcome
+  document.getElementById("btnStart").addEventListener("click", ()=> show("screenIntro"));
+  document.getElementById("btnResetAll").addEventListener("click", ()=>{
+    if(confirm("Resetar tudo (nota, histórico, tokens)?")){
+      resetAll();
+    }
+  });
+
+  // Intro
+  document.getElementById("btnGoOral").addEventListener("click", ()=> startOral());
+  document.getElementById("btnBackWelcome").addEventListener("click", ()=> show("screenWelcome"));
+
+  // Oral
+  document.getElementById("btnMic").addEventListener("click", enableMic);
+  document.getElementById("btnRecord").addEventListener("click", recordAnswerWindow);
+  document.getElementById("btnSkip").addEventListener("click", skipOral);
+  document.getElementById("btnEndOral").addEventListener("click", endOral);
+
+  document.getElementById("btnToWritten").addEventListener("click", ()=>{
+    // mantém mic ligado se quiser — mas aqui encerramos para ficar leve
+    try{ disableMic(); }catch{}
+    if(oralTimerInt) clearInterval(oralTimerInt);
+    startWritten();
+  });
+
+  document.getElementById("btnRestartOral").addEventListener("click", ()=>{
+    if(confirm("Recomeçar fase oral?")){
+      try{ disableMic(); }catch{}
+      startOral();
+    }
+  });
+
+  // Written
+  document.getElementById("btnWNext").addEventListener("click", nextWritten);
+  document.getElementById("btnWPrev").addEventListener("click", prevWritten);
+  document.getElementById("btnWFinish").addEventListener("click", ()=>{
+    if(confirm("Finalizar prova agora?")){
+      finishWritten();
+    }
+  });
+
+  document.getElementById("btnRetry").addEventListener("click", ()=>{
+    if(confirm("Refazer prova (mudar perguntas)?")){
+      show("screenOral");
+      // volta para oral para ganhar foco e token; depois vai escrita
+      document.getElementById("btnToWritten").disabled = false;
+      alert("Volte para a fase oral se quiser treinar e ganhar token. Ou siga direto para escrita.");
+      show("screenWritten");
+      startWritten();
+    }
+  });
+
+  document.getElementById("btnGoReport").addEventListener("click", ()=>{
+    buildReport();
+    show("screenReport");
+  });
+
+  // Report
+  document.getElementById("btnCopyReport").addEventListener("click", async ()=>{
+    const ta = document.getElementById("reportText");
+    try{
+      await navigator.clipboard.writeText(ta.value);
+      alert("Relatório copiado.");
+    }catch{
+      ta.select();
+      document.execCommand("copy");
+      alert("Relatório copiado (modo compatível).");
+    }
+  });
+
+  document.getElementById("btnCopyMeta").addEventListener("click", async ()=>{
+    const meta = JSON.stringify(anonymizedMetadata(), null, 2);
+    try{
+      await navigator.clipboard.writeText(meta);
+      alert("Metadados anonimizados copiados.");
+    }catch{
+      alert(meta);
+    }
+  });
+
+  document.getElementById("btnClearHistory").addEventListener("click", ()=>{
+    if(confirm("Limpar histórico e notas?")){
+      localStorage.removeItem(STORE.HISTORY);
+      localStorage.removeItem(STORE.BEST);
+      localStorage.removeItem(STORE.LAST);
+      refreshPills();
+      buildReport();
+    }
+  });
+
+  document.getElementById("btnBackHome").addEventListener("click", ()=>{
+    show("screenWelcome");
+  });
+
+  // Começa na Welcome
+  show("screenWelcome");
+});
