@@ -810,3 +810,194 @@ document.addEventListener("DOMContentLoaded", ()=>{
   // Começa na Welcome
   show("screenWelcome");
 });
+
+/* --------------------------
+   FASE ORAL (tempo + palavras)
+-------------------------- */
+
+let recognition = null;
+let recognitionAvailable = false;
+
+function initSpeech() {
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    recognitionAvailable = false;
+    console.warn("SpeechRecognition não disponível. Usando fallback.");
+    return;
+  }
+
+  recognitionAvailable = true;
+  recognition = new SpeechRecognition();
+  recognition.lang = "pt-BR";
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onresult = (event) => {
+    let transcript = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    state.oral.lastTranscript = transcript.trim();
+
+    const words = transcript.trim().split(/\s+/).filter(Boolean);
+    state.oral.lastWords = words.length;
+  };
+
+  recognition.onerror = () => {
+    recognitionAvailable = false;
+  };
+}
+
+/* --------------------------
+   Controle da Oral
+-------------------------- */
+
+function startOral() {
+  state.oral.questions = pickRandom(ORAL_POOL, 3);
+  state.oral.idx = 0;
+  state.oral.oralAgg = {
+    answers:0,
+    totalWords:0,
+    totalSec:0,
+    avgWordsPerSec:0,
+    avgSecPerAnswer:0,
+    avgWordsPerAnswer:0,
+    avgPausesHint:0,
+    avgConfidenceHint:0
+  };
+
+  resetGoals();
+  showOralQuestion();
+  show("screenOral");
+}
+
+function resetGoals() {
+  state.goals = { g1:false, g2:false, g3:false };
+  state.holds = { foco:0, constancia:0, harmonia:0 };
+  state.rewardGiven = false;
+}
+
+function showOralQuestion() {
+  const q = state.oral.questions[state.oral.idx];
+  $("oralQuestion").textContent = q.text;
+  $("oralProgress").textContent =
+    `Pergunta ${state.oral.idx + 1} de ${state.oral.questions.length}`;
+}
+
+function beginListening() {
+  state.oral.startedAt = now();
+  state.oral.lastWords = 0;
+  state.oral.lastTranscript = "";
+  state.oral.listening = true;
+
+  if (recognitionAvailable && recognition) {
+    try { recognition.start(); } catch {}
+  }
+
+  $("btnStartOral").disabled = true;
+  $("btnNextOral").disabled = false;
+
+  state.oral.timerInt = setInterval(updateOralMetrics, 300);
+}
+
+function stopListening() {
+  state.oral.listening = false;
+
+  if (recognitionAvailable && recognition) {
+    try { recognition.stop(); } catch {}
+  }
+
+  clearInterval(state.oral.timerInt);
+
+  $("btnStartOral").disabled = false;
+  $("btnNextOral").disabled = true;
+
+  finalizeOralAnswer();
+}
+
+/* --------------------------
+   MÉTRICAS POR TEMPO + PALAVRAS
+-------------------------- */
+
+function updateOralMetrics() {
+  if (!state.oral.listening) return;
+
+  const elapsed = (now() - state.oral.startedAt) / 1000;
+  state.oral.lastSec = elapsed;
+
+  // Fallback: se não houver reconhecimento, simula 1 palavra por segundo
+  const words = recognitionAvailable
+    ? state.oral.lastWords
+    : Math.floor(elapsed * 1.2);
+
+  // Métrica principal: palavras por segundo
+  const wps = words / Math.max(1, elapsed);
+
+  // ====== LÓGICA EDUCACIONAL SIMPLES ======
+
+  // Presença → tempo ativo
+  approach("presenca", clamp01(elapsed / 8));
+
+  // Impulso → início rápido (quanto antes começar falar)
+  approach("impulso", clamp01(words > 2 ? 0.8 : 0.3));
+
+  // Fluxo → constância de palavras
+  approach("fluxo", clamp01(wps / 2));
+
+  // Constância → estabilidade de fala
+  approach("constancia", clamp01(wps / 1.5));
+
+  // Pausa ok → nem rápido demais nem parado
+  const pausaScore = (wps > 0.5 && wps < 2.5) ? 0.8 : 0.4;
+  approach("pausa", pausaScore);
+
+  // Entonação (proxy simplificado)
+  approach("entonacao", clamp01(0.6 + Math.sin(elapsed) * 0.2));
+
+  // Foco → palavras mínimas sustentadas
+  approach("foco", clamp01(words / 15));
+
+  // Harmonia → média geral
+  const avg = (
+    state.bars.presenca +
+    state.bars.constancia +
+    state.bars.foco
+  ) / 3;
+  approach("harmonia", avg);
+}
+
+function finalizeOralAnswer() {
+  const sec = state.oral.lastSec;
+  const words = state.oral.lastWords;
+
+  state.oral.oralAgg.answers += 1;
+  state.oral.oralAgg.totalSec += sec;
+  state.oral.oralAgg.totalWords += words;
+
+  const agg = state.oral.oralAgg;
+  agg.avgWordsPerSec = agg.totalWords / Math.max(1, agg.totalSec);
+  agg.avgSecPerAnswer = agg.totalSec / agg.answers;
+  agg.avgWordsPerAnswer = agg.totalWords / agg.answers;
+
+  // proxies simples
+  agg.avgConfidenceHint = clamp01(agg.avgWordsPerSec / 2);
+  agg.avgPausesHint = clamp01(1 - Math.abs(1 - agg.avgWordsPerSec));
+
+  state.oral.idx++;
+
+  if (state.oral.idx < state.oral.questions.length) {
+    showOralQuestion();
+  } else {
+    finishOralPhase();
+  }
+}
+
+function finishOralPhase() {
+  show("screenWritten");
+  initWritten();
+}
+
+
+... 
