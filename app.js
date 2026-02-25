@@ -1,18 +1,28 @@
-// Vibrações de Leão — app.js (raiz)
-// Demo educacional: sem envio de áudio. Apenas métricas locais + metadados anonimizados copiáveis.
-// Barras = INPUT do aluno (fala sobe; silêncio desce devagar). CRS fica oculto (só no relatório).
+/* Vibrações de Leão — app.js (raiz)
+   - Páginas: index/oral/prova/relatorio/coordenacao/config
+   - Barras = INPUT (palavras + tempo + fluidez)
+   - Microfone: toggle (SpeechRecognition para contar palavras do que foi dito)
+   - Relatórios: aluno + coordenação (anonimizado)
+*/
 
-/* =========================
-   Storage
-========================= */
 const STORE = {
-  BEST: "vdl_best_score",
-  LAST: "vdl_last_score",
-  HISTORY: "vdl_history",
-  TOKENS: "vdl_tokens_demo",
   PROFILE: "vdl_profile",
+  TOKENS: "vdl_tokens",
+  BEST: "vdl_best",
+  LAST: "vdl_last",
   TRY: "vdl_try",
-  SESSION: "vdl_session"
+  ORAL: "vdl_oral_last",
+  HISTORY: "vdl_history",
+  COORD_SENT: "vdl_coord_sent_bonus",
+  CONFIG: "vdl_config",
+  SESSION: "vdl_session_id"
+};
+
+const DEFAULT_CONFIG = {
+  maxOralSec: 20,      // tempo máximo por resposta oral
+  goalSec: 4,          // meta de permanência acima da linha
+  targetLine: 0.65,    // linha-alvo (0..1)
+  talkGain: 1.8        // ganho (quanto falar sobe as barras)
 };
 
 function readJSON(key, fallback){
@@ -22,258 +32,124 @@ function readJSON(key, fallback){
     return JSON.parse(raw);
   }catch{ return fallback; }
 }
-function writeJSON(key, val){
-  localStorage.setItem(key, JSON.stringify(val));
-}
-function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function writeJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 function now(){ return Date.now(); }
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function fmtTime(sec){
+  sec = Math.max(0, Math.floor(sec));
+  const m = String(Math.floor(sec/60)).padStart(2,"0");
+  const s = String(sec%60).padStart(2,"0");
+  return `${m}:${s}`;
+}
+function uid(){
+  // id leve pra sessão (não é PII)
+  return "S" + Math.random().toString(16).slice(2,8).toUpperCase() + "-" + Date.now().toString(36).toUpperCase();
+}
 
-function genSessionId(){
-  // simples, curto, sem PII
-  return Math.random().toString(16).slice(2,10) + "-" + Math.random().toString(16).slice(2,6);
+function getCfg(){
+  const c = readJSON(STORE.CONFIG, null);
+  return { ...DEFAULT_CONFIG, ...(c || {}) };
+}
+function setCfg(c){ writeJSON(STORE.CONFIG, c); }
+
+function initSession(){
+  let s = localStorage.getItem(STORE.SESSION);
+  if(!s){ s = uid(); localStorage.setItem(STORE.SESSION, s); }
+  return s;
 }
 
 function getTokens(){
-  return Number(localStorage.getItem(STORE.TOKENS) || "0");
+  const t = Number(localStorage.getItem(STORE.TOKENS) || "0");
+  return Number.isFinite(t) ? t : 0;
 }
 function setTokens(v){
   localStorage.setItem(STORE.TOKENS, String(Math.max(0, Math.floor(v))));
-  const el = document.getElementById("kTokens");
-  if(el) el.textContent = String(getTokens());
 }
-function initTokens(){
+function ensureTokens(){
+  // começa com 2 tokens (pra não travar criança)
   const t = Number(localStorage.getItem(STORE.TOKENS));
-  if(Number.isFinite(t)) return t;
-  localStorage.setItem(STORE.TOKENS, String(3)); // começa com 3
-  return 3;
+  if(Number.isFinite(t)) return;
+  setTokens(2);
 }
+
 function getBest(){ return Number(localStorage.getItem(STORE.BEST) || "0"); }
-function setBest(v){ localStorage.setItem(STORE.BEST, String(v)); }
+function setBest(v){ localStorage.setItem(STORE.BEST, String(Math.max(0, Math.floor(v)))); }
 function getLast(){ return Number(localStorage.getItem(STORE.LAST) || "0"); }
-function setLast(v){ localStorage.setItem(STORE.LAST, String(v)); }
+function setLast(v){ localStorage.setItem(STORE.LAST, String(Math.max(0, Math.floor(v)))); }
+
+function getTry(){ return Number(localStorage.getItem(STORE.TRY) || "1"); }
+function setTry(v){ localStorage.setItem(STORE.TRY, String(Math.max(1, Math.floor(v)))); }
+
+function setProfile(name, turma){
+  writeJSON(STORE.PROFILE, { name: (name||"").trim(), turma: (turma||"").trim() });
+}
+function getProfile(){
+  return readJSON(STORE.PROFILE, { name:"", turma:"" });
+}
 
 function pushHistory(entry){
   const h = readJSON(STORE.HISTORY, []);
   h.unshift(entry);
-  writeJSON(STORE.HISTORY, h.slice(0, 40));
+  writeJSON(STORE.HISTORY, h.slice(0, 30));
 }
 
 function resetAll(){
   Object.values(STORE).forEach(k => localStorage.removeItem(k));
-  initTokens();
-  setTokens(getTokens());
-  setBest(0);
-  setLast(0);
-  writeJSON(STORE.HISTORY, []);
-  writeJSON(STORE.PROFILE, {name:"", turma:""});
-  localStorage.setItem(STORE.TRY, "1");
-  localStorage.setItem(STORE.SESSION, genSessionId());
-  hydrateHeader();
-  showHome();
+  ensureTokens();
+  initSession();
 }
 
-/* =========================
-   Pools (bem básico)
-========================= */
-const ORAL_POOL = [
-  "Diga seu nome e sua idade (se quiser).",
-  "Com suas palavras: o que é um algoritmo?",
-  "O que é uma variável? (pode explicar simples)",
-  "Conte de 10 até 1 devagar.",
-  "Fale uma frase completa sobre um tema que você gosta."
-];
+function $(id){ return document.getElementById(id); }
 
-const WRITTEN_POOL = [
-  { q:"O que é um algoritmo?", a:[
-    "Um passo a passo para resolver um problema.",
-    "Um tipo de computador.",
-    "Um aplicativo de celular.",
-    "Uma peça de hardware."
-  ], correct:0 },
-  { q:"Qual é um exemplo de entrada (input) em um programa?", a:[
-    "Um número digitado pelo usuário.",
-    "A tela do monitor.",
-    "A bateria do celular.",
-    "O cabo USB."
-  ], correct:0 },
-  { q:"O que é uma variável?", a:[
-    "Um espaço para guardar um valor (número, texto, etc.).",
-    "Uma impressora.",
-    "Um vírus.",
-    "Um tipo de teclado."
-  ], correct:0 },
-  { q:"O que significa repetir em programação (loop)?", a:[
-    "Fazer a mesma ação várias vezes.",
-    "Desligar o computador.",
-    "Salvar um arquivo.",
-    "Conectar na internet."
-  ], correct:0 },
-  { q:"O que significa 'se... então...' (condicional)?", a:[
-    "Tomar uma decisão baseada em uma condição.",
-    "Aumentar o volume.",
-    "Apertar um botão.",
-    "Criar um arquivo."
-  ], correct:0 },
-  { q:"O que é um bit?", a:[
-    "Representa informação como 0 ou 1.",
-    "Uma foto impressa.",
-    "Um carregador de celular.",
-    "Um som do microfone."
-  ], correct:0 }
-];
-
-function pickRandom(arr, n){
-  const copy = arr.slice();
-  for(let i=copy.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy.slice(0, Math.min(n, copy.length));
+function setText(id, txt){
+  const el = $(id);
+  if(el) el.textContent = txt;
 }
 
-/* =========================
-   UI helpers
-========================= */
-function hideAllAreas(){
-  ["oralArea","writeArea","coordArea"].forEach(id=>{
-    const el = document.getElementById(id);
-    if(el) el.classList.add("hide");
-  });
-}
-function setMain(title, sub){
-  const t = document.getElementById("mainTitle");
-  const s = document.getElementById("mainSub");
-  if(t) t.textContent = title;
-  if(s) s.innerHTML = sub;
-}
-function showHome(){
-  hideAllAreas();
-  setMain("Bem-vindo 👋",
-    `Entre com seu nome. Você pode refazer a prova quantas vezes quiser. O sistema guarda sua <b>maior nota</b>.
-     <br><span class="small">Privacidade demo: tudo fica neste dispositivo (localStorage). Relatório para coordenação é <b>anonimizado</b>.</span>`
-  );
-  // nada mais precisa: áreas ficam ocultas
-}
-function showOral(){
-  hideAllAreas();
-  document.getElementById("oralArea")?.classList.remove("hide");
-  setMain("Fase oral 🎙️",
-    `Responda uma por vez. Quando você <b>fala</b>, suas barras sobem. Quando você <b>para</b>, elas descem devagar.
-     <br><span class="small">Dica: fale com calma. Se não souber, diga "não sei" e avance.</span>`
-  );
-}
-function showWrite(){
-  hideAllAreas();
-  document.getElementById("writeArea")?.classList.remove("hide");
-  setMain("Fase escrita ✍️",
-    `Marque as alternativas. Você pode refazer quantas vezes quiser. O sistema guarda a <b>maior nota</b>.`
-  );
-}
-function showCoord(){
-  hideAllAreas();
-  document.getElementById("coordArea")?.classList.remove("hide");
-  setMain("Coordenação 🧩",
-    `Aqui sai um JSON <b>anonimizado</b> (sem nome, sem turma, sem áudio), para apoiar ações pedagógicas e psicopedagógicas.`
-  );
+function updateTopPills(){
+  setText("kBest", `${getBest() || "--"}/10`);
+  setText("kLast", `${getLast() || "--"}/10`);
+  setText("kTokens", `${getTokens()}`);
+  setText("kTry", `${getTry()}`);
+  setText("kSess", localStorage.getItem(STORE.SESSION) || "—");
+  setText("kGen", new Date().toLocaleString());
+  setText("kDate", new Date().toLocaleDateString());
 }
 
-function hydrateHeader(){
-  // data “da prova” pode ser hoje (demo)
-  const d = new Date();
-  const kDate = document.getElementById("kDate");
-  if(kDate){
-    const dd = String(d.getDate()).padStart(2,"0");
-    const mm = String(d.getMonth()+1).padStart(2,"0");
-    const yy = d.getFullYear();
-    kDate.textContent = `${dd}/${mm}/${yy}`;
-  }
-  const kBest = document.getElementById("kBest");
-  const kTokens = document.getElementById("kTokens");
-  if(kBest) kBest.textContent = `${getBest() || "--"}/10`;
-  if(kTokens) kTokens.textContent = String(getTokens());
-
-  // nível (demo): baseado na melhor nota
-  const best = getBest();
-  const lvl = best >= 8 ? "Avançando" : best >= 5 ? "Básico" : "Iniciante";
-  const kLevel = document.getElementById("kLevel");
-  if(kLevel) kLevel.textContent = lvl;
-
-  // sessão
-  let sess = localStorage.getItem(STORE.SESSION);
-  if(!sess){
-    sess = genSessionId();
-    localStorage.setItem(STORE.SESSION, sess);
-  }
-  const kSess = document.getElementById("kSess");
-  if(kSess) kSess.textContent = sess;
-
-  // tentativa
-  const t = Number(localStorage.getItem(STORE.TRY) || "1");
-  const kTry = document.getElementById("kTry");
-  if(kTry) kTry.textContent = String(t);
-}
-
-function profile(){
-  return {
-    name: (document.getElementById("inpName")?.value || "").trim(),
-    turma: (document.getElementById("inpClass")?.value || "").trim()
-  };
-}
-function saveProfile(){
-  writeJSON(STORE.PROFILE, profile());
-}
-
-/* =========================
-   Barras (8 métricas) — INPUT DO ALUNO
-   Regra: falando => sobe rápido; silêncio => desce devagar.
-   Metas: manter acima da linha por 4s (fácil).
-========================= */
+// ------------------------------
+// Barras (8 métricas) — INPUT
+// ------------------------------
 const METRICS = [
-  { id:"presenca",  label:"presença"  },
-  { id:"impulso",   label:"impulso"   },
-  { id:"fluxo",     label:"fluxo"     },
-  { id:"constancia",label:"constância"},
-  { id:"pausa",     label:"pausa"     },
-  { id:"entonacao", label:"entonação" },
-  { id:"foco",      label:"foco"      },
-  { id:"harmonia",  label:"harmonia"  }
+  { id:"presenca",  name:"Presença"   },
+  { id:"impulso",   name:"Impulso"    },
+  { id:"fluxo",     name:"Fluxo"      },
+  { id:"constancia",name:"Constância" },
+  { id:"pausa",     name:"Pausa"      },
+  { id:"entonacao", name:"Entonação"  },
+  { id:"foco",      name:"Foco"       },
+  { id:"harmonia",  name:"Harmonia"   }
 ];
 
-let barsUI = {};
-const bars = {
-  presenca:0, impulso:0, fluxo:0, constancia:0, pausa:0, entonacao:0, foco:0, harmonia:0
-};
-
-// “memória” de fala para acumular e ficar fácil de subir
-const accum = {
-  talkEnergy: 0,        // energia acumulada da fala
-  talkStability: 0,     // estabilidade (menos tremor)
-  talkContinuity: 0,    // continuidade (menos pausas)
-  calm: 0,              // “calma” (var baixa)
-  lastRms: 0
-};
-
-// metas: 4s acima da linha (0.65)
-const GOAL_TH = 0.65;
-const GOAL_SEC = 4.0;
-
-const goalHold = { foco:0, constancia:0, harmonia:0 };
+let barsUI = null;
+const barState = Object.fromEntries(METRICS.map(m => [m.id, 0]));
+const barHold = { foco:0, constancia:0, harmonia:0 };
 let goalsDone = { g1:false, g2:false, g3:false };
-let rewardOralGiven = false;
+let rewardGiven = false;
 
-function buildBarsUI(){
-  const root = document.getElementById("barList");
+function buildBars(){
+  const root = $("barList");
   if(!root) return;
   root.innerHTML = "";
   barsUI = {};
+  const cfg = getCfg();
 
   METRICS.forEach(m=>{
     const row = document.createElement("div");
     row.className = "barRow";
 
-    const lab = document.createElement("div");
-    lab.className = "barLabel";
-    lab.textContent = m.label;
+    const label = document.createElement("div");
+    label.className = "barLabel";
+    label.textContent = m.name;
 
     const track = document.createElement("div");
     track.className = "track";
@@ -283,6 +159,7 @@ function buildBarsUI(){
 
     const target = document.createElement("div");
     target.className = "targetLine";
+    target.style.left = `${Math.round(cfg.targetLine*100)}%`;
 
     track.appendChild(fill);
     track.appendChild(target);
@@ -291,7 +168,7 @@ function buildBarsUI(){
     val.className = "val";
     val.textContent = "0.00";
 
-    row.appendChild(lab);
+    row.appendChild(label);
     row.appendChild(track);
     row.appendChild(val);
     root.appendChild(row);
@@ -303,731 +180,939 @@ function buildBarsUI(){
 }
 
 function renderBars(){
-  for(const k in bars){
-    const v = clamp01(bars[k]);
-    const ui = barsUI[k];
-    if(!ui) continue;
-    ui.fill.style.width = `${(v*100).toFixed(1)}%`;
-    ui.val.textContent = v.toFixed(2);
+  if(!barsUI) return;
+  for(const k in barState){
+    const v = clamp01(barState[k]);
+    barsUI[k].fill.style.width = `${(v*100).toFixed(1)}%`;
+    barsUI[k].val.textContent = v.toFixed(2);
   }
 
-  const m1 = document.getElementById("m1Dot");
-  const m2 = document.getElementById("m2Dot");
-  const m3 = document.getElementById("m3Dot");
+  // metas visuais
+  if(goalsDone.g1) $("m1Dot")?.classList.add("ok");
+  if(goalsDone.g2) $("m2Dot")?.classList.add("ok");
+  if(goalsDone.g3) $("m3Dot")?.classList.add("ok");
 
-  if(goalsDone.g1) m1?.classList.add("ok");
-  if(goalsDone.g2) m2?.classList.add("ok");
-  if(goalsDone.g3) m3?.classList.add("ok");
-
-  if(goalsDone.g1 && goalsDone.g2 && goalsDone.g3 && !rewardOralGiven){
+  // recompensa: +1 token uma única vez por sessão oral
+  if(goalsDone.g1 && goalsDone.g2 && goalsDone.g3 && !rewardGiven){
     setTokens(getTokens() + 1);
-    rewardOralGiven = true;
-    // aviso leve
-    try{ alert("🔥 Metas completas! +1 token demo."); }catch{}
+    rewardGiven = true;
+    updateTopPills();
+    // não grita demais: só um aviso simples
+    try{ alert("Metas completas! Você ganhou +1 token."); }catch{}
   }
 }
 
-function resetBarsAndGoals(){
-  for(const k in bars) bars[k] = 0;
-  accum.talkEnergy = 0;
-  accum.talkStability = 0;
-  accum.talkContinuity = 0;
-  accum.calm = 0;
-  accum.lastRms = 0;
+// sobe rápido e desce devagar
+function approach(key, target, up=0.40, down=0.06){
+  const cur = barState[key];
+  const a = (target > cur) ? up : down;
+  barState[key] = clamp01(cur + (target - cur) * a);
+}
 
-  goalHold.foco = 0;
-  goalHold.constancia = 0;
-  goalHold.harmonia = 0;
+// “pulsos de fala” alimentam as barras
+function feedBars(talkPower, continuity, calmness){
+  // talkPower: 0..1 (fala/energia)
+  // continuity: 0..1 (fala contínua)
+  // calmness: 0..1 (menos tranco)
+  const cfg = getCfg();
+  const p = clamp01(talkPower * cfg.talkGain);
 
-  goalsDone = { g1:false, g2:false, g3:false };
-  rewardOralGiven = false;
+  // mapeamento pedagógico (INPUT)
+  const pres = clamp01(0.55*continuity + 0.45*calmness);
+  const imp  = clamp01(p);
+  const flu  = clamp01(0.70*continuity + 0.30*p);
+  const con  = clamp01(calmness);
+  const pau  = clamp01(0.50*calmness + 0.50*(1 - Math.abs(continuity-0.65)));
+  const ent  = clamp01(0.45*p + 0.55*(1 - calmness)); // variação aparece quando fala “picotado”
+  const foco = clamp01(0.55*pres + 0.45*con);
+  const har  = clamp01((pres + con + foco + flu)/4);
 
-  document.getElementById("m1Dot")?.classList.remove("ok");
-  document.getElementById("m2Dot")?.classList.remove("ok");
-  document.getElementById("m3Dot")?.classList.remove("ok");
+  approach("presenca", pres);
+  approach("impulso", imp);
+  approach("fluxo", flu);
+  approach("constancia", con);
+  approach("pausa", pau);
+  approach("entonacao", ent);
+  approach("foco", foco);
+  approach("harmonia", har);
 
+  updateGoals();
   renderBars();
 }
 
-/* =========================
-   Microfone + detecção de fala (VAD leve)
-   - Não transcreve.
-   - Detecta "falando" via RMS e usa isso para subir barras.
-========================= */
-let audioCtx=null, analyser=null, stream=null, src=null;
-let timeData=null;
-let raf=null;
-let micOn=false;
-
-// janela de “gravação” = o aluno responde
-const RECORD_SEC = 15;
-
-// VAD (ajustável)
-let vadNoiseFloor = 0.02;  // estimado na calibração
-let vadThreshold = 0.045;  // vai recalcular após calibrar
-let vadHangMs = 250;       // tolera pequenos buracos
-
-let speaking = false;
-let lastSpeechTs = 0;
-
-// KPI da resposta atual
-let answerStartTs = 0;
-let talkMs = 0;
-let totalMs = 0;
-
-function rmsFromTimeDomain(buf){
-  let sum=0;
-  for(let i=0;i<buf.length;i++){
-    const v = (buf[i]-128)/128;
-    sum += v*v;
+function decayBars(){
+  // quando não fala, desce devagar (não humilha a criança)
+  for(const k in barState){
+    approach(k, 0, 0.12, 0.03);
   }
-  return Math.sqrt(sum/buf.length);
-}
-
-function approachValue(cur, target, up=0.35, down=0.06){
-  const a = target > cur ? up : down;
-  return clamp01(cur + (target-cur)*a);
-}
-
-function updateBarsFromAudio(dt){
-  if(!micOn || !analyser) return;
-
-  analyser.getByteTimeDomainData(timeData);
-  const rms = clamp01(rmsFromTimeDomain(timeData) * 2.0); // ganho visual
-
-  // VAD (fala)
-  const isSpeechNow = rms > vadThreshold;
-  const t = now();
-
-  if(isSpeechNow){
-    lastSpeechTs = t;
-    speaking = true;
-  }else{
-    if(speaking && (t - lastSpeechTs) > vadHangMs){
-      speaking = false;
-    }
-  }
-
-  // acumula KPI da resposta (só enquanto “gravando”)
-  if(answerStartTs > 0){
-    totalMs += dt*1000;
-    if(speaking) talkMs += dt*1000;
-  }
-
-  // estabilidade = pouca oscilação de rms
-  const varProxy = clamp01(Math.abs(rms - accum.lastRms) * 6.0);
-  accum.lastRms = rms;
-
-  // energia acumulada sobe rápido ao falar; desce devagar no silêncio
-  if(speaking){
-    accum.talkEnergy = clamp01(accum.talkEnergy + dt*1.2 * rms);
-    accum.talkContinuity = clamp01(accum.talkContinuity + dt*0.9);
-  }else{
-    accum.talkEnergy = clamp01(accum.talkEnergy - dt*0.18);
-    accum.talkContinuity = clamp01(accum.talkContinuity - dt*0.22);
-  }
-
-  // calma: menos var = mais calma (quando falando)
-  const calmNow = clamp01(1 - varProxy);
-  if(speaking){
-    accum.calm = clamp01(accum.calm + dt*0.55 * calmNow);
-    accum.talkStability = clamp01(accum.talkStability + dt*0.65 * calmNow);
-  }else{
-    accum.calm = clamp01(accum.calm - dt*0.08);
-    accum.talkStability = clamp01(accum.talkStability - dt*0.10);
-  }
-
-  // mapa de barras (todas “respondem” à fala)
-  // objetivo: falando = sobe, e sobe suficiente em 4s para bater meta
-  const energy = accum.talkEnergy;        // 0..1
-  const cont   = accum.talkContinuity;    // 0..1
-  const stab   = accum.talkStability;     // 0..1
-  const calm   = accum.calm;              // 0..1
-
-  const presT = clamp01(0.35 + 0.70*cont);            // presença = continuidade
-  const impT  = clamp01(0.20 + 0.85*energy);          // impulso = energia
-  const fluxoT= clamp01(0.25 + 0.70*cont);            // fluxo = continuidade
-  const consT = clamp01(0.20 + 0.85*stab);            // constância = estabilidade
-  const pausaT= clamp01(0.35 + 0.55*calm);            // pausa ok = calma
-  const entT  = clamp01(0.20 + 0.40*(1-calm) + 0.35*energy); // entonação = var/energia (proxy)
-  const focoT = clamp01(0.30 + 0.55*stab + 0.35*cont);       // foco = estabilidade+continuidade
-  const harmT = clamp01((presT + consT + focoT + pausaT)/4); // harmonia = equilíbrio
-
-  // sobe rápido; desce devagar (já pela memória + approach)
-  bars.presenca   = approachValue(bars.presenca, presT);
-  bars.impulso    = approachValue(bars.impulso, impT);
-  bars.fluxo      = approachValue(bars.fluxo, fluxoT);
-  bars.constancia = approachValue(bars.constancia, consT);
-  bars.pausa      = approachValue(bars.pausa, pausaT);
-  bars.entonacao  = approachValue(bars.entonacao, entT);
-  bars.foco       = approachValue(bars.foco, focoT);
-  bars.harmonia   = approachValue(bars.harmonia, harmT);
-
-  // metas (conta tempo acima da linha)
-  if(bars.foco >= GOAL_TH) goalHold.foco += dt; else goalHold.foco = Math.max(0, goalHold.foco - dt*0.4);
-  if(bars.constancia >= GOAL_TH) goalHold.constancia += dt; else goalHold.constancia = Math.max(0, goalHold.constancia - dt*0.4);
-  if(bars.harmonia >= GOAL_TH) goalHold.harmonia += dt; else goalHold.harmonia = Math.max(0, goalHold.harmonia - dt*0.4);
-
-  if(!goalsDone.g1 && goalHold.foco >= GOAL_SEC) goalsDone.g1 = true;
-  if(!goalsDone.g2 && goalHold.constancia >= GOAL_SEC) goalsDone.g2 = true;
-  if(!goalsDone.g3 && goalHold.harmonia >= GOAL_SEC) goalsDone.g3 = true;
-
+  updateGoals();
   renderBars();
-
-  // KPI visível (sem transcrever)
-  updateKPI();
 }
 
-async function micToggle(){
-  if(micOn){
-    disableMic();
-    return;
-  }
-  await enableMic();
+function updateGoals(){
+  const cfg = getCfg();
+  const TH = cfg.targetLine;
+  const need = cfg.goalSec;
+  const dt = 1/20; // estimativa (50ms)
+
+  // sobe “crédito” acima da linha; cai um pouco quando abaixo
+  if(barState.foco >= TH) barHold.foco += dt; else barHold.foco = Math.max(0, barHold.foco - dt*0.6);
+  if(barState.constancia >= TH) barHold.constancia += dt; else barHold.constancia = Math.max(0, barHold.constancia - dt*0.6);
+  if(barState.harmonia >= TH) barHold.harmonia += dt; else barHold.harmonia = Math.max(0, barHold.harmonia - dt*0.6);
+
+  if(!goalsDone.g1 && barHold.foco >= need) goalsDone.g1 = true;
+  if(!goalsDone.g2 && barHold.constancia >= need) goalsDone.g2 = true;
+  if(!goalsDone.g3 && barHold.harmonia >= need) goalsDone.g3 = true;
 }
 
-async function enableMic(){
-  try{
-    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.65;
+// ------------------------------
+// Fase oral — SpeechRecognition (palavras do que foi dito)
+// ------------------------------
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    src = audioCtx.createMediaStreamSource(stream);
-    src.connect(analyser);
-    timeData = new Uint8Array(analyser.fftSize);
+const ORAL_QUESTIONS = [
+  "Conte de 1 até 10, sem pressa.",
+  "Fale seu nome e uma coisa que você gosta.",
+  "Conte o que você fez hoje (pode ser bem simples)."
+];
 
-    micOn = true;
+let oralIdx = 0;
+let oralTimer = null;
+let oralStartedAt = 0;
 
-    // calibra “chão de ruído” em 700ms
-    await calibrateNoiseFloor();
+let micEnabled = false;
+let isRecording = false;
+let rec = null;
+let recTick = null;
 
-    setMicUI(true);
-    const loop = ()=>{
-      raf = requestAnimationFrame(loop);
-      // dt aproximado
-      updateBarsFromAudio(1/60);
-    };
-    loop();
-  }catch(e){
-    try{ alert("Falha ao acessar microfone. Verifique permissões do navegador."); }catch{}
-  }
+let windowStart = 0;
+let windowLastWords = 0;
+let windowWords = 0;
+let windowText = "";
+let lastInterimAt = 0;
+
+const oralAgg = {
+  totalWindows:0,
+  totalWords:0,
+  totalSec:0,
+  avgWpm:0,
+  avgContinuity:0,
+  avgCalmness:0
+};
+
+function resetOralAgg(){
+  oralAgg.totalWindows=0;
+  oralAgg.totalWords=0;
+  oralAgg.totalSec=0;
+  oralAgg.avgWpm=0;
+  oralAgg.avgContinuity=0;
+  oralAgg.avgCalmness=0;
 }
 
-async function calibrateNoiseFloor(){
-  // mede RMS médio de ruído ambiente por ~700ms
-  const t0 = now();
-  let sum = 0, n = 0;
-
-  return new Promise((resolve)=>{
-    const iv = setInterval(()=>{
-      if(!analyser) return;
-      analyser.getByteTimeDomainData(timeData);
-      const rms = clamp01(rmsFromTimeDomain(timeData) * 2.0);
-      sum += rms; n++;
-      if(now() - t0 > 700){
-        clearInterval(iv);
-        vadNoiseFloor = n ? sum/n : 0.02;
-        // threshold = ruído + margem
-        vadThreshold = Math.max(0.035, vadNoiseFloor + 0.020);
-        resolve();
-      }
-    }, 50);
+function saveOralAgg(){
+  writeJSON(STORE.ORAL, {
+    at: now(),
+    ...oralAgg
   });
 }
 
-function disableMic(){
-  try{ if(raf) cancelAnimationFrame(raf); }catch{}
-  raf = null;
-
-  try{ src?.disconnect(); }catch{}
-  try{ audioCtx?.close(); }catch{}
-  try{ stream?.getTracks()?.forEach(t=>t.stop()); }catch{}
-
-  micOn = false;
-  speaking = false;
-  setMicUI(false);
+function wordCountFromText(t){
+  const cleaned = (t||"")
+    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if(!cleaned) return 0;
+  return cleaned.split(" ").filter(Boolean).length;
 }
 
-function setMicUI(on){
-  const micStateEl = document.getElementById("micState");
-  const btnMic = document.getElementById("btnMic");
-  const btnRec = document.getElementById("btnRec");
-
-  if(micStateEl) micStateEl.textContent = on ? "ligado ✅" : "desligado";
-  if(btnMic) btnMic.textContent = on ? "Desativar microfone" : "Ativar microfone";
-  if(btnRec) btnRec.disabled = !on;
+function oralSetQuestion(){
+  setText("qPos", `${oralIdx+1}/${ORAL_QUESTIONS.length}`);
+  setText("qText", ORAL_QUESTIONS[oralIdx] || "—");
+  setText("oralStatus", "Fale com calma. Se não souber, diga “não sei” e avance.");
 }
 
-/* =========================
-   KPI (palavras estimadas / duração / ritmo)
-   - sem transcrição (não conta ruído como palavra)
-========================= */
-function updateKPI(){
-  const kWords = document.getElementById("kWords");
-  const kDur   = document.getElementById("kDur");
-  const kWpm   = document.getElementById("kWpm");
-
-  const durS = totalMs/1000;
-  const talkS = talkMs/1000;
-
-  // palavras estimadas: assume ~2.2 palavras por segundo de fala calma
-  const wordsEst = Math.max(0, Math.round(talkS * 2.2));
-
-  // wpm estimado: (palavras / min de fala) — se não falou, 0
-  const wpm = talkS > 0.2 ? Math.round((wordsEst / talkS) * 60) : 0;
-
-  if(kWords) kWords.textContent = String(wordsEst);
-  if(kDur) kDur.textContent = durS.toFixed(1);
-  if(kWpm) kWpm.textContent = String(wpm);
-}
-
-
-/* =========================
-   Fase Oral
-========================= */
-let oralQuestions = [];
-let oralIdx = 0;
-const ORAL_N = 5;
-
-let oralStartedAt = 0;
-let oralClockInt = null;
-
-function startFlow(){
-  saveProfile();
-  hydrateHeader();
-  startOral();
-}
-
-function startOral(){
-  oralQuestions = pickRandom(ORAL_POOL, ORAL_N);
-  oralIdx = 0;
-
-  resetBarsAndGoals();
-  clearAnswerWindow();
-
-  // botão escrita travado até finalizar oral
-  disableGoWrite(true);
-
+function startOralClock(){
   oralStartedAt = now();
-  if(oralClockInt) clearInterval(oralClockInt);
-  oralClockInt = setInterval(()=>{
-    const sec = Math.floor((now()-oralStartedAt)/1000);
-    const mm = String(Math.floor(sec/60)).padStart(2,"0");
-    const ss = String(sec%60).padStart(2,"0");
-    document.getElementById("oralClock").textContent = `${mm}:${ss}`;
+  if(oralTimer) clearInterval(oralTimer);
+  oralTimer = setInterval(()=>{
+    const sec = (now()-oralStartedAt)/1000;
+    setText("oralClock", fmtTime(sec));
   }, 250);
-
-  updateOralUI();
-  showOral();
-
-  // se mic estava ligado, mantém (mas resetando métricas)
-  // a pessoa escolhe ligar quando quiser
 }
 
-function updateOralUI(){
-  const qPos = document.getElementById("qPos");
-  const qText = document.getElementById("qText");
-  if(qPos) qPos.textContent = `${oralIdx+1}/${oralQuestions.length}`;
-  if(qText) qText.textContent = oralQuestions[oralIdx] || "—";
-
-  const status = document.getElementById("oralStatus");
-  if(status){
-    status.textContent = "Dica: fale com calma. Se não souber, diga “não sei” e avance.";
-  }
+function stopOralClock(){
+  if(oralTimer) clearInterval(oralTimer);
+  oralTimer = null;
 }
 
-function clearAnswerWindow(){
-  answerStartTs = 0;
-  talkMs = 0;
-  totalMs = 0;
-  updateKPI();
+function setMicLabel(){
+  setText("kMic", micEnabled ? "ligado" : "desligado");
+  setText("micState", micEnabled ? "ligado" : "desligado");
+  const btn = $("btnMicToggle");
+  if(btn) btn.textContent = micEnabled ? "Desligar microfone" : "Ligar microfone";
 }
 
-function disableGoWrite(disabled){
-  const btn = document.getElementById("btnGoWrite");
-  if(!btn) return;
-  if(disabled){
-    btn.classList.add("disabled");
-  }else{
-    btn.classList.remove("disabled");
-  }
-}
-
-function nextOral(){
-  oralIdx++;
-  clearAnswerWindow();
-
-  if(oralIdx >= oralQuestions.length){
-    // finaliza oral
-    finishOral();
-    return;
-  }
-  updateOralUI();
-}
-
-function skipOral(){
-  nextOral();
-}
-
-function finishOral(){
-  // libera escrita
-  disableGoWrite(false);
-
-  const status = document.getElementById("oralStatus");
-  if(status){
-    status.textContent = "✅ Oral concluída! Agora pode ir para a fase escrita.";
-  }
-}
-
-function endOral(){
-  // encerra antes do fim, mas libera escrita igual (para não travar demo)
-  disableGoWrite(false);
-  const status = document.getElementById("oralStatus");
-  if(status){
-    status.textContent = "Oral encerrada. Você pode seguir para a fase escrita.";
-  }
-}
-
-function recordAnswerWindow(){
-  if(!micOn){
-    try{ alert("Ative o microfone primeiro."); }catch{}
+async function toggleMic(){
+  if(!SpeechRecognition){
+    alert("Este navegador não tem reconhecimento de fala. Use Chrome no Android/PC.");
     return;
   }
 
-  // inicia janela da resposta
-  clearAnswerWindow();
-  answerStartTs = now();
+  if(micEnabled){
+    // desligar
+    try{ stopRecording(true); }catch{}
+    micEnabled = false;
+    setMicLabel();
+    $("btnRec")?.classList.add("disabled");
+    $("btnStop")?.classList.add("disabled");
+    updateTopPills();
+    return;
+  }
 
-  const btnRec = document.getElementById("btnRec");
-  if(btnRec) btnRec.disabled = true;
+  micEnabled = true;
+  setMicLabel();
+  $("btnRec")?.classList.remove("disabled");
+  updateTopPills();
+}
 
-  const status = document.getElementById("oralStatus");
-  if(status) status.textContent = `Gravando janela de resposta (${RECORD_SEC}s)… fale normalmente.`;
+function makeRecognizer(){
+  const r = new SpeechRecognition();
+  r.lang = "pt-BR";
+  r.interimResults = true;
+  r.continuous = true;
+  return r;
+}
 
-  const t0 = now();
-  const iv = setInterval(()=>{
-    const elapsed = (now()-t0)/1000;
-    if(elapsed >= RECORD_SEC){
-      clearInterval(iv);
+function startRecording(){
+  if(!micEnabled){
+    alert("Ligue o microfone primeiro.");
+    return;
+  }
+  if(isRecording) return;
 
-      // encerra janela
-      answerStartTs = 0;
+  // reset janela
+  windowStart = now();
+  windowWords = 0;
+  windowLastWords = 0;
+  windowText = "";
+  lastInterimAt = now();
 
-      if(status){
-        status.textContent = "Resposta registrada (métricas locais). Próxima pergunta!";
-      }
-      if(btnRec) btnRec.disabled = false;
+  isRecording = true;
+  setText("recState", "gravando…");
+  $("btnRec")?.classList.add("disabled");
+  $("btnStop")?.classList.remove("disabled");
+  setText("oralStatus", "Fale. As barras sobem conforme você fala.");
 
-      nextOral();
+  // cria recognizer
+  rec = makeRecognizer();
+
+  rec.onresult = (evt)=>{
+    let interim = "";
+    let finalText = "";
+    for(let i=evt.resultIndex; i<evt.results.length; i++){
+      const res = evt.results[i];
+      const txt = res[0].transcript || "";
+      if(res.isFinal) finalText += txt + " ";
+      else interim += txt + " ";
     }
-  }, 120);
+
+    // junta o final; interim serve pra detectar atividade
+    if(finalText){
+      windowText += finalText;
+      lastInterimAt = now();
+    }else if(interim){
+      lastInterimAt = now();
+    }
+
+    const wc = wordCountFromText(windowText + " " + interim);
+    windowWords = wc;
+  };
+
+  rec.onerror = (e)=>{
+    // erros comuns: no-speech, aborted, not-allowed
+    setText("recState", "erro");
+    setText("oralStatus", "Se não captou, tente de novo e fale perto do celular.");
+  };
+
+  rec.onend = ()=>{
+    // se estiver gravando, tenta manter contínuo (chrome às vezes encerra sozinho)
+    if(isRecording){
+      try{ rec.start(); }catch{}
+    }
+  };
+
+  try{ rec.start(); }catch{}
+
+  // loop 20Hz: alimenta barras por palavras/tempo e “fluidez”
+  const cfg = getCfg();
+  recTick = setInterval(()=>{
+    const elapsed = (now()-windowStart)/1000;
+    const words = windowWords;
+
+    // KPIs
+    setText("kWords", String(words));
+    setText("kDur", elapsed.toFixed(1));
+    const wpm = elapsed > 0.5 ? Math.round((words/elapsed)*60) : 0;
+    setText("kWpm", String(wpm));
+
+    // “fala detectada” por crescimento de palavras
+    const delta = Math.max(0, words - windowLastWords);
+    windowLastWords = words;
+
+    // talkPower sobe com delta de palavras e com wpm (até um teto)
+    const talkPower = clamp01((delta/2) + (wpm/140));
+    // continuity: se está recebendo resultados recentes (sem pausas longas)
+    const gap = (now() - lastInterimAt)/1000;
+    const continuity = clamp01(1 - (gap/1.8)); // se >1.8s sem sinal, cai
+    // calmness: não “tranca”: wpm moderado dá melhor nota
+    const calmness = clamp01(1 - Math.abs((wpm - 105)/105)); // pico por volta de 105wpm
+
+    if(delta > 0 || continuity > 0.35){
+      feedBars(talkPower, continuity, calmness);
+    }else{
+      decayBars();
+    }
+
+    // auto-stop por tempo máximo
+    if(elapsed >= cfg.maxOralSec){
+      stopRecording(false);
+    }
+  }, 50);
 }
 
-/* =========================
-   Fase Escrita (vale 10)
-========================= */
-let written = {
-  items: [],
-  answers: {},  // idx -> option
-  tryN: 1
-};
+function stopRecording(userStop){
+  if(!isRecording) return;
+  isRecording = false;
 
-function startWritten(){
-  // regra demo: precisa de 1 token
-  const tokens = getTokens();
-  if(tokens <= 0){
-    try{ alert("Sem tokens demo. Faça as metas na fase oral para ganhar +1 token."); }catch{}
-    showOral();
+  try{ clearInterval(recTick); }catch{}
+  recTick = null;
+
+  try{ rec?.stop(); }catch{}
+  rec = null;
+
+  setText("recState", "parado");
+  $("btnRec")?.classList.remove("disabled");
+  $("btnStop")?.classList.add("disabled");
+
+  // agregados da janela
+  const elapsed = (now()-windowStart)/1000;
+  const wpm = elapsed > 0.5 ? (windowWords/elapsed)*60 : 0;
+
+  // continuidade/calmness aproximados a partir do estado final das barras
+  const continuity = barState.fluxo;
+  const calmness = barState.constancia;
+
+  // atualiza agregados
+  const n = oralAgg.totalWindows + 1;
+  oralAgg.avgWpm = (oralAgg.avgWpm*oralAgg.totalWindows + wpm)/n;
+  oralAgg.avgContinuity = (oralAgg.avgContinuity*oralAgg.totalWindows + continuity)/n;
+  oralAgg.avgCalmness = (oralAgg.avgCalmness*oralAgg.totalWindows + calmness)/n;
+  oralAgg.totalWindows = n;
+  oralAgg.totalWords += windowWords;
+  oralAgg.totalSec += elapsed;
+
+  saveOralAgg();
+
+  // avança pergunta
+  if(!userStop){
+    nextOralQuestion();
+  }else{
+    setText("oralStatus", "Você parou. Se quiser, grave de novo.");
+  }
+}
+
+function nextOralQuestion(){
+  // salva um pedacinho leve (sem áudio)
+  const entry = readJSON(STORE.ORAL, {});
+  writeJSON(STORE.ORAL, entry);
+
+  if(oralIdx < ORAL_QUESTIONS.length - 1){
+    oralIdx++;
+    windowWords = 0; windowLastWords = 0; windowText = "";
+    oralSetQuestion();
+    setText("kWords", "0"); setText("kDur", "0.0"); setText("kWpm", "0");
+    setText("oralStatus", "Próxima pergunta. Quando estiver pronto, grave.");
     return;
   }
-  setTokens(tokens - 1);
 
-  // tentativa ++
-  let t = Number(localStorage.getItem(STORE.TRY) || "1");
-  t = Math.max(1, t);
-  localStorage.setItem(STORE.TRY, String(t));
-  document.getElementById("kTry").textContent = String(t);
-
-  written.tryN = t;
-  written.items = pickRandom(WRITTEN_POOL, 5);
-  written.answers = {};
-
-  renderWritten();
-  showWrite();
+  // fim oral
+  setText("oralStatus", "Fase oral concluída. Agora você pode ir para a prova.");
+  $("btnGoProva")?.classList.remove("disabled");
+  try{ alert("Fase oral concluída! A prova escrita foi liberada."); }catch{}
 }
 
-function renderWritten(){
-  const grid = document.getElementById("writeGrid");
-  if(!grid) return;
-  grid.innerHTML = "";
+function restartOral(){
+  oralIdx = 0;
+  resetOralAgg();
 
-  written.items.forEach((it, idx)=>{
+  // reset metas
+  for(const k in barState) barState[k] = 0;
+  barHold.foco = barHold.constancia = barHold.harmonia = 0;
+  goalsDone = { g1:false, g2:false, g3:false };
+  rewardGiven = false;
+
+  $("m1Dot")?.classList.remove("ok");
+  $("m2Dot")?.classList.remove("ok");
+  $("m3Dot")?.classList.remove("ok");
+
+  oralSetQuestion();
+  setText("kWords","0"); setText("kDur","0.0"); setText("kWpm","0");
+  $("btnGoProva")?.classList.add("disabled");
+  renderBars();
+}
+
+// ------------------------------
+// Prova escrita — bem básica, progressiva
+// ------------------------------
+const WRITTEN_POOL = [
+  {
+    q: "O que é um algoritmo?",
+    a: [
+      "Um passo a passo para resolver um problema.",
+      "Um tipo de celular.",
+      "Um jogo de futebol.",
+      "Uma peça de roupa."
+    ],
+    correct: 0
+  },
+  {
+    q: "O que é 'entrada' em um programa?",
+    a: [
+      "O que o usuário digita ou fala para o programa.",
+      "A cor do computador.",
+      "O volume do som.",
+      "O cabo carregador."
+    ],
+    correct: 0
+  },
+  {
+    q: "O que é uma variável?",
+    a: [
+      "Um lugar para guardar um valor (número, texto).",
+      "Um botão do teclado.",
+      "Um tipo de fone.",
+      "Um desenho."
+    ],
+    correct: 0
+  },
+  {
+    q: "Para que serve 'se... então...'?",
+    a: [
+      "Para tomar uma decisão quando algo acontece.",
+      "Para aumentar a tela.",
+      "Para desligar a internet.",
+      "Para carregar o celular."
+    ],
+    correct: 0
+  },
+  {
+    q: "O que é um 'loop' (repetição)?",
+    a: [
+      "Fazer a mesma ação mais de uma vez.",
+      "Trocar de celular.",
+      "Abaixar o brilho.",
+      "Abrir o WhatsApp."
+    ],
+    correct: 0
+  },
+  {
+    q: "O que é um bit?",
+    a: [
+      "Um pedaço de informação que pode ser 0 ou 1.",
+      "Um tipo de caneta.",
+      "Um aplicativo de música.",
+      "Uma nota de prova."
+    ],
+    correct: 0
+  }
+];
+
+function pickRandom(arr, n){
+  const copy = arr.slice();
+  for(let i=copy.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, Math.min(n, copy.length));
+}
+
+let provaItems = [];
+let provaAnswers = {}; // idx->choice
+
+function renderProva(){
+  const grid = $("writeGrid");
+  if(!grid) return;
+
+  provaItems = pickRandom(WRITTEN_POOL, 5);
+  provaAnswers = {};
+
+  grid.innerHTML = "";
+  provaItems.forEach((item, idx)=>{
     const block = document.createElement("div");
     block.className = "questionBlock";
 
     const h = document.createElement("h4");
-    h.textContent = `Questão ${idx+1}/5`;
-    block.appendChild(h);
-
+    h.textContent = `Questão ${idx+1}`;
     const p = document.createElement("div");
-    p.style.fontWeight = "900";
-    p.style.marginBottom = "8px";
-    p.textContent = it.q;
+    p.className = "qText";
+    p.textContent = item.q;
+
+    block.appendChild(h);
     block.appendChild(p);
 
-    it.a.forEach((opt, i)=>{
+    item.a.forEach((txt, i)=>{
       const lab = document.createElement("label");
       lab.className = "opt";
 
-      const r = document.createElement("input");
-      r.type = "radio";
-      r.name = `q_${idx}`;
-      r.value = String(i);
-      r.checked = (written.answers[idx] === i);
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "q" + idx;
+      radio.value = String(i);
 
-      r.addEventListener("change", ()=>{
-        written.answers[idx] = i;
-        updateWriteStatus();
+      radio.addEventListener("change", ()=>{
+        provaAnswers[idx] = i;
       });
 
-      lab.appendChild(r);
-      lab.appendChild(document.createTextNode(` ${String.fromCharCode(65+i)}) ${opt}`));
+      const body = document.createElement("div");
+      body.innerHTML = `<div style="font-weight:900">${String.fromCharCode(65+i)})</div><div class="muted">${txt}</div>`;
+
+      lab.appendChild(radio);
+      lab.appendChild(body);
+
       block.appendChild(lab);
     });
 
     grid.appendChild(block);
   });
 
-  updateWriteStatus();
+  setText("provaStatus", "Marque as alternativas e clique em Corrigir.");
 }
 
-function updateWriteStatus(){
-  const st = document.getElementById("writeStatus");
-  if(!st) return;
-  const answered = Object.keys(written.answers).length;
-  st.textContent = `Respondidas: ${answered}/5`;
-}
+function gradeProva(){
+  const total = provaItems.length;
+  let answered = 0;
+  let correct = 0;
 
-function gradeWritten(){
-  // exige marcar todas
-  if(Object.keys(written.answers).length < written.items.length){
-    try{ alert("Marque todas as questões antes de corrigir."); }catch{}
+  for(let i=0;i<total;i++){
+    if(provaAnswers.hasOwnProperty(i)){
+      answered++;
+      if(provaAnswers[i] === provaItems[i].correct) correct++;
+    }
+  }
+
+  if(answered < total){
+    alert("Marque todas as questões para corrigir.");
     return;
   }
 
-  let correct = 0;
-  written.items.forEach((it, idx)=>{
-    if(written.answers[idx] === it.correct) correct++;
-  });
-
-  const score10 = Math.round((correct / written.items.length) * 10);
+  const score10 = Math.round((correct/total)*10);
   setLast(score10);
 
   const best = Math.max(getBest(), score10);
   setBest(best);
 
-  // nível
-  hydrateHeader();
-
-  // guarda histórico (sem PII)
   pushHistory({
-    ts: now(),
-    tryN: written.tryN,
-    score10,
-    best,
-    oralBars: { ...bars },
-    goalsDone: { ...goalsDone },
-    tokensLeft: getTokens()
+    at: now(),
+    last: score10,
+    best: best,
+    correct,
+    total,
+    oral: readJSON(STORE.ORAL, null),
+    tokens: getTokens()
   });
 
-  try{
-    alert(`✅ Nota: ${score10}/10\nAcertos: ${correct}/5\nMelhor nota: ${best}/10`);
-  }catch{}
+  setText("kLast", `${score10}/10`);
+  setText("kBest", `${best}/10`);
 
-  // volta para home (ou fica)
-  showHome();
-  hydrateHeader();
+  setText("provaStatus", `Você tirou ${score10}/10. Refaça para melhorar sua maior nota.`);
+  try{ alert(`Nota: ${score10}/10`); }catch{}
+
+  updateTopPills();
 }
 
 function newTry(){
-  // aumenta tentativa e gera prova diferente
-  let t = Number(localStorage.getItem(STORE.TRY) || "1");
-  t++;
-  localStorage.setItem(STORE.TRY, String(t));
-  document.getElementById("kTry").textContent = String(t);
-
-  written.tryN = t;
-  written.items = pickRandom(WRITTEN_POOL, 5);
-  written.answers = {};
-  renderWritten();
+  setTry(getTry()+1);
+  updateTopPills();
+  renderProva();
 }
 
-function backToOral(){
-  showOral();
+
+// ------------------------------
+// Relatório do aluno
+// ------------------------------
+function buildAlunoReport(){
+  const prof = getProfile();
+  const oral = readJSON(STORE.ORAL, null);
+
+  const best = getBest();
+  const last = getLast();
+  const sess = localStorage.getItem(STORE.SESSION);
+
+  const text =
+`VIBRAÇÕES DE LEÃO — RELATÓRIO
+
+Data/Hora: ${new Date().toLocaleString()}
+Sessão: ${sess}
+
+Aluno:
+- Nome: ${prof.name || "(não informado)"}
+- Turma: ${prof.turma || "(não informado)"}
+
+Prova:
+- Última nota: ${last}/10
+- Melhor nota: ${best}/10
+- Tentativa: ${getTry()}
+
+Fase oral (resumo de fala):
+- Janelas gravadas: ${oral?.totalWindows ?? 0}
+- Total de palavras: ${oral?.totalWords ?? 0}
+- Tempo total falado (s): ${Number(oral?.totalSec ?? 0).toFixed(1)}
+- Ritmo médio (pal/min): ${Number(oral?.avgWpm ?? 0).toFixed(0)}
+- Fluidez média: ${Number(oral?.avgContinuity ?? 0).toFixed(2)}
+- Constância média: ${Number(oral?.avgCalmness ?? 0).toFixed(2)}
+
+Leitura sugerida:
+- Se o ritmo estiver baixo, fale mais perto do microfone e complete frases curtas.
+- Se a fluidez estiver baixa, tente falar sem parar por alguns segundos.
+- Se a constância estiver baixa, respire e responda com calma.
+
+Fechamento:
+Obrigado pela presença e pelo esmero.
+`;
+
+  return text;
 }
 
-/* =========================
-   Coordenação (anonimizado) + bônus de token
-========================= */
-let lastCoordJson = null;
-let coordBonusGiven = false;
-
-function anonymizedCoordPayload(){
+// ------------------------------
+// Relatório coordenação (anonimizado) + baixar/copy + bônus token
+// ------------------------------
+function buildCoordJSON(){
   const h = readJSON(STORE.HISTORY, []);
-  const latest = h[0] || null;
+  const lastH = h[0] || null;
+  const oral = readJSON(STORE.ORAL, null);
 
-  // “métricas ocultas”: usa barras + metas + sessão
   return {
     app: "vibracoes-de-leao",
-    version: "demo-edu-2",
-    sessionId: localStorage.getItem(STORE.SESSION) || null,
     generatedAt: new Date().toISOString(),
-    scores: {
+    session: localStorage.getItem(STORE.SESSION),
+    prova: {
       last: getLast(),
-      best: getBest()
+      best: getBest(),
+      tentativa: getTry(),
+      lastCorrect: lastH?.correct ?? null,
+      lastTotal: lastH?.total ?? null
     },
-    oral: {
-      goals: { ...goalsDone },
-      barsSnapshot: Object.fromEntries(Object.entries(bars).map(([k,v])=>[k, Number(v.toFixed(3))])),
-      vad: {
-        noiseFloor: Number(vadNoiseFloor.toFixed(4)),
-        threshold: Number(vadThreshold.toFixed(4)),
-        hangMs: vadHangMs
-      }
-    },
-    usage: {
-      tokensLeft: getTokens(),
-      lastAttemptAt: latest?.ts ? new Date(latest.ts).toISOString() : null
-    },
-    privacy: {
-      containsPII: false,
-      containsAudio: false,
-      note: "Dados anonimizados. Sem nome/turma/áudio. Uso apenas pedagógico."
-    }
+    oral: oral ? {
+      totalWindows: oral.totalWindows,
+      totalWords: oral.totalWords,
+      totalSec: Number(oral.totalSec.toFixed(1)),
+      avgWpm: Number(oral.avgWpm.toFixed(0)),
+      avgContinuity: Number(oral.avgContinuity.toFixed(2)),
+      avgCalmness: Number(oral.avgCalmness.toFixed(2))
+    } : null,
+    // sem nome, sem turma, sem áudio
+    notes: "Relatório anonimizável para ações pedagógicas coletivas."
   };
 }
 
-function buildCoordReport(){
-  lastCoordJson = anonymizedCoordPayload();
-  const box = document.getElementById("reportBox");
-  if(box) box.value = JSON.stringify(lastCoordJson, null, 2);
-
-  // habilita botões
-  document.getElementById("btnCopyReport")?.classList.remove("disabled");
-  document.getElementById("btnDownloadReport")?.classList.remove("disabled");
-
-  // bônus de token (1x por sessão)
-  if(!coordBonusGiven){
-    setTokens(getTokens() + 1);
-    coordBonusGiven = true;
-    try{ alert("📌 Relatório de coordenação gerado. +1 token bônus (demo)."); }catch{}
-  }
-}
-
-async function copyCoordReport(){
-  if(!lastCoordJson) return;
-  const text = JSON.stringify(lastCoordJson, null, 2);
-  try{
-    await navigator.clipboard.writeText(text);
-    alert("JSON copiado.");
-  }catch{
-    alert(text);
-  }
-}
-
-function downloadCoordReport(){
-  if(!lastCoordJson) return;
-  const blob = new Blob([JSON.stringify(lastCoordJson, null, 2)], {type:"application/json"});
+function downloadText(filename, content){
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `vibracoes_coord_${localStorage.getItem(STORE.SESSION) || "sessao"}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 800);
+  setTimeout(()=>URL.revokeObjectURL(url), 1200);
 }
 
-/* =========================
-   Bindings
-========================= */
+async function copyToClipboard(text){
+  try{
+    await navigator.clipboard.writeText(text);
+    return true;
+  }catch{
+    return false;
+  }
+}
+
+// ------------------------------
+// Inicializadores por página
+// ------------------------------
+function initHome(){
+  buildBars();
+  updateTopPills();
+
+  // restaura profile
+  const prof = getProfile();
+  const name = $("inpName");
+  const turma = $("inpClass");
+  if(name && !name.value) name.value = prof.name || "";
+  if(turma && !turma.value) turma.value = prof.turma || "";
+
+  $("btnGoOral")?.addEventListener("click", ()=>{
+    setProfile(name?.value || "", turma?.value || "");
+    window.location.href = "./oral.html";
+  });
+
+  $("btnResetAll")?.addEventListener("click", ()=>{
+    if(confirm("Zerar notas, tokens e históricos neste dispositivo?")){
+      resetAll();
+      updateTopPills();
+      buildBars();
+      alert("Tudo zerado.");
+    }
+  });
+}
+
+function initOral(){
+  buildBars();
+  updateTopPills();
+  initSession();
+
+  // perfil já salvo no home; se vier direto, mantém
+  startOralClock();
+  restartOral();
+  oralSetQuestion();
+  setMicLabel();
+
+  // botões
+  $("btnMicToggle")?.addEventListener("click", async ()=>{
+    await toggleMic();
+    setMicLabel();
+    updateTopPills();
+    if(micEnabled){
+      $("btnRec")?.classList.remove("disabled");
+    }else{
+      $("btnRec")?.classList.add("disabled");
+    }
+  });
+
+  $("btnRec")?.addEventListener("click", ()=>{
+    if($("btnRec")?.classList.contains("disabled")) return;
+    startRecording();
+  });
+
+  $("btnStop")?.addEventListener("click", ()=>{
+    stopRecording(true);
+  });
+
+  $("btnSkip")?.addEventListener("click", ()=>{
+    // pular sem gravar: pequenas quedas, mas segue
+    decayBars();
+    nextOralQuestion();
+  });
+
+  $("btnRestartOral")?.addEventListener("click", ()=>{
+    if(confirm("Recomeçar fase oral?")){
+      stopRecording(true);
+      restartOral();
+    }
+  });
+
+  $("btnGoProva")?.addEventListener("click", ()=>{
+    if($("btnGoProva")?.classList.contains("disabled")){
+      alert("Conclua a fase oral (3 perguntas) para liberar.");
+      return;
+    }
+    window.location.href = "./prova.html";
+  });
+
+  // loop de decaimento suave quando parado
+  setInterval(()=>{
+    if(!isRecording) decayBars();
+  }, 120);
+
+  // dica: se microfone ficar ligado, manter; se quiser desligar, usuário desliga
+}
+
+function initProva(){
+  updateTopPills();
+  initSession();
+
+  // custo de token para iniciar prova (se quiser “modo escola”: sempre deixa)
+  // aqui: se tokens 0, ainda deixa fazer a prova (não trava escola).
+  // mas tokens continuam existindo como motivação.
+  renderProva();
+
+  $("btnCorrigir")?.addEventListener("click", gradeProva);
+  $("btnNova")?.addEventListener("click", newTry);
+}
+
+function initRelatorio(){
+  updateTopPills();
+  initSession();
+
+  const box = $("relBox");
+  const btnGerar = $("btnGerarRel");
+  const btnCopiar = $("btnCopiarRel");
+
+  btnGerar?.addEventListener("click", ()=>{
+    const txt = buildAlunoReport();
+    if(box) box.value = txt;
+    btnCopiar?.classList.remove("disabled");
+    updateTopPills();
+  });
+
+  btnCopiar?.addEventListener("click", async ()=>{
+    if(btnCopiar.classList.contains("disabled")) return;
+    const ok = await copyToClipboard(box?.value || "");
+    if(ok) alert("Relatório copiado.");
+    else alert("Não foi possível copiar. Selecione o texto e copie manualmente.");
+  });
+
+  $("btnLimparNotas")?.addEventListener("click", ()=>{
+    if(confirm("Limpar notas e histórico (mantém perfil e config)?")){
+      localStorage.removeItem(STORE.BEST);
+      localStorage.removeItem(STORE.LAST);
+      localStorage.removeItem(STORE.HISTORY);
+      setTry(1);
+      updateTopPills();
+      if(box) box.value = "";
+      btnCopiar?.classList.add("disabled");
+      alert("Notas limpas.");
+    }
+  });
+}
+
+function initCoord(){
+  updateTopPills();
+  const sess = initSession();
+  setText("kSess", sess);
+
+  const box = $("coordBox");
+  const btnGerar = $("btnGerarCoord");
+  const btnCopiar = $("btnCopiarCoord");
+  const btnBaixar = $("btnBaixarCoord");
+  const btnBonus = $("btnEnviarToken");
+
+  btnGerar?.addEventListener("click", ()=>{
+    const obj = buildCoordJSON();
+    const txt = JSON.stringify(obj, null, 2);
+    if(box) box.value = txt;
+
+    btnCopiar?.classList.remove("disabled");
+    btnBaixar?.classList.remove("disabled");
+    btnBonus?.classList.remove("disabled");
+
+    updateTopPills();
+  });
+
+  btnCopiar?.addEventListener("click", async ()=>{
+    if(btnCopiar.classList.contains("disabled")) return;
+    const ok = await copyToClipboard(box?.value || "");
+    if(ok) alert("JSON copiado.");
+    else alert("Não foi possível copiar. Selecione o texto e copie manualmente.");
+  });
+
+  btnBaixar?.addEventListener("click", ()=>{
+    if(btnBaixar.classList.contains("disabled")) return;
+    const content = box?.value || "";
+    if(!content.trim()){
+      alert("Gere o relatório primeiro.");
+      return;
+    }
+    downloadText(`coordenacao-${sess}.json`, content);
+  });
+
+  btnBonus?.addEventListener("click", ()=>{
+    if(btnBonus.classList.contains("disabled")) return;
+
+    // bônus de 1 token uma vez por sessão
+    const key = STORE.COORD_SENT + ":" + sess;
+    if(localStorage.getItem(key)){
+      alert("Bônus já aplicado nesta sessão.");
+      return;
+    }
+    if(confirm("Confirmar participação com a coordenação? (ganha +1 token)")){
+      localStorage.setItem(key, "1");
+      setTokens(getTokens() + 1);
+      updateTopPills();
+      alert("Obrigado. +1 token.");
+    }
+  });
+}
+
+function initConfig(){
+  updateTopPills();
+  initSession();
+
+  const cfg = getCfg();
+  const maxSec = $("cfgMaxSec");
+  const goalSec = $("cfgGoalSec");
+  const target = $("cfgTarget");
+  const gain = $("cfgGain");
+
+  if(maxSec) maxSec.value = String(cfg.maxOralSec);
+  if(goalSec) goalSec.value = String(cfg.goalSec);
+  if(target) target.value = String(cfg.targetLine);
+  if(gain) gain.value = String(cfg.talkGain);
+
+  $("btnSaveCfg")?.addEventListener("click", ()=>{
+    const next = {
+      maxOralSec: Number(maxSec?.value || DEFAULT_CONFIG.maxOralSec),
+      goalSec: Number(goalSec?.value || DEFAULT_CONFIG.goalSec),
+      targetLine: Number(target?.value || DEFAULT_CONFIG.targetLine),
+      talkGain: Number(gain?.value || DEFAULT_CONFIG.talkGain)
+    };
+
+    // limites
+    next.maxOralSec = Math.max(8, Math.min(45, next.maxOralSec));
+    next.goalSec = Math.max(2, Math.min(10, next.goalSec));
+    next.targetLine = Math.max(0.40, Math.min(0.90, next.targetLine));
+    next.talkGain = Math.max(1, Math.min(3, next.talkGain));
+
+    setCfg(next);
+    alert("Configurações salvas.");
+  });
+
+  $("btnResetCfg")?.addEventListener("click", ()=>{
+    if(confirm("Restaurar padrão?")){
+      setCfg(DEFAULT_CONFIG);
+      alert("Padrão restaurado.");
+      window.location.reload();
+    }
+  });
+}
+
+// ------------------------------
+// Boot
+// ------------------------------
 document.addEventListener("DOMContentLoaded", ()=>{
-  // init
-  initTokens();
-  setTokens(getTokens());
+  ensureTokens();
+  initSession();
+  updateTopPills();
+  buildBars();
 
-  // restore profile
-  const prof = readJSON(STORE.PROFILE, null);
-  if(prof){
-    const n = document.getElementById("inpName");
-    const c = document.getElementById("inpClass");
-    if(n && !n.value) n.value = prof.name || "";
-    if(c && !c.value) c.value = prof.turma || "";
+  // home: salvar profile se existir input
+  if(document.body.dataset.page === "home"){
+    initHome();
+    return;
   }
 
-  // ensure session
-  if(!localStorage.getItem(STORE.SESSION)){
-    localStorage.setItem(STORE.SESSION, genSessionId());
+  // oral: precisa de profile? se veio direto, ok
+  if(document.body.dataset.page === "oral"){
+    initOral();
+    return;
   }
 
-  hydrateHeader();
-  buildBarsUI();
-  showHome();
+  if(document.body.dataset.page === "prova"){
+    initProva();
+    return;
+  }
 
-  // Buttons home
-  document.getElementById("btnStart")?.addEventListener("click", startFlow);
-  document.getElementById("btnResetAll")?.addEventListener("click", ()=>{
-    if(confirm("Zerar tudo (dados locais, notas, tokens)?")) resetAll();
-  });
-  document.getElementById("btnGoCoord")?.addEventListener("click", ()=>{
-    saveProfile();
-    showCoord();
-  });
+  if(document.body.dataset.page === "relatorio"){
+    initRelatorio();
+    return;
+  }
 
-  // Oral controls
-  document.getElementById("btnMic")?.addEventListener("click", micToggle);
-  document.getElementById("btnRec")?.addEventListener("click", recordAnswerWindow);
-  document.getElementById("btnSkip")?.addEventListener("click", skipOral);
-  document.getElementById("btnEndOral")?.addEventListener("click", endOral);
-  document.getElementById("btnRestartOral")?.addEventListener("click", ()=>{
-    if(confirm("Recomeçar fase oral?")) startOral();
-  });
-  document.getElementById("btnGoWrite")?.addEventListener("click", ()=>{
-    // só vai se liberado
-    const btn = document.getElementById("btnGoWrite");
-    if(btn?.classList.contains("disabled")) return;
+  if(document.body.dataset.page === "coord"){
+    initCoord();
+    return;
+  }
 
-    // opcional: desliga mic para economizar e evitar confusão
-    if(micOn) disableMic();
-    if(oralClockInt) clearInterval(oralClockInt);
-
-    // incrementa tentativa antes de iniciar prova escrita
-    let t = Number(localStorage.getItem(STORE.TRY) || "1");
-    localStorage.setItem(STORE.TRY, String(t));
-    document.getElementById("kTry").textContent = String(t);
-
-    startWritten();
-  });
-
-  // Written controls
-  document.getElementById("btnGrade")?.addEventListener("click", gradeWritten);
-  document.getElementById("btnNewTry")?.addEventListener("click", ()=>{
-    if(confirm("Nova tentativa com perguntas diferentes?")) newTry();
-  });
-  document.getElementById("btnBackOral")?.addEventListener("click", backToOral);
-
-  // Coord controls
-  document.getElementById("btnBuildReport")?.addEventListener("click", buildCoordReport);
-  document.getElementById("btnCopyReport")?.addEventListener("click", copyCoordReport);
-  document.getElementById("btnDownloadReport")?.addEventListener("click", downloadCoordReport);
-  document.getElementById("btnBackApp")?.addEventListener("click", ()=>{
-    showHome();
-    hydrateHeader();
-  });
-
-  // quando o usuário edita nome/turma, salva
-  document.getElementById("inpName")?.addEventListener("input", saveProfile);
-  document.getElementById("inpClass")?.addEventListener("input", saveProfile);
+  if(document.body.dataset.page === "config"){
+    initConfig();
+    return;
+  }
 });
