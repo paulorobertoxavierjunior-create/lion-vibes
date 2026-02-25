@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vibrações de Leão • Coordenação</title>
+  <meta name="theme-color" content="#dff4f6" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body data-page="coord">
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <h1>Coordenação</h1>
+        <p>Metadados anonimizados • Para ações pedagógicas coletivas</p>
+        <div class="pillbar">
+          <span class="pill">Sessão: <strong id="kSess" class="mono">—</strong></span>
+          <span class="pill">Tokens: <strong id="kTokens">0</strong></span>
+        </div>
+        <div class="nav">
+          <a href="./index.html">Início</a>
+          <a href="./oral.html">Oral</a>
+          <a href="./prova.html">Prova</a>
+          <a href="./relatorio.html">Relatório</a>
+        </div>
+      </div>
+      <div class="logo" title="Logo">
+        <img alt="Logo" src="./IMG-20260218-WA0015.jpg" />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sectionTitle">
+        <h2>Relatório para coordenação</h2>
+        <div class="badge">opcional</div>
+      </div>
+
+      <p class="subtitle">
+        Este relatório <b>não inclui nome</b> e <b>não inclui áudio</b>.
+        Ele resume padrões gerais de fala (tempo/palavras) e desempenho na prova.
+      </p>
+
+      <div class="btns">
+        <button class="primary" id="btnGerarCoord">Gerar</button>
+        <button class="ghost disabled" id="btnCopiarCoord">Copiar</button>
+        <button class="ghost disabled" id="btnBaixarCoord">Baixar JSON</button>
+        <button class="ghost disabled" id="btnEnviarToken">Confirmar envio (ganha +1 token)</button>
+      </div>
+
+      <div style="height:10px"></div>
+      <textarea id="coordBox" placeholder="Clique em Gerar…"></textarea>
+
+      <div class="footer">
+        A coordenação usa isso para enxergar o coletivo e melhorar o ensino. Você escolhe participar.
+      </div>
+    </div>
+  </div>
+
+  <script defer src="./app.js"></script>
+</body>
+</html>
